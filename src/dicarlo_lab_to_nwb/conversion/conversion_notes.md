@@ -3,12 +3,13 @@
 
 
 
+
 ## Notes about session structure
 
 These are the files that were shared with us:
 
 ```python
-├── exp_1_shapes    
+├── exp_1_shapes
 ├── exp_Co3D   # Has raw files for Intan, and videos as stimuli
 ├── exp_domain-transfer-2023  # Has raw files for Intan, images as stimuli
 ├── exp_IAPS
@@ -18,7 +19,7 @@ These are the files that were shared with us:
 └── StimulusSets
 ```
 
-We have sessions for 
+We have sessions for
 
 The experiment 'exp_domain-transfer-2023' has raw files for Intan, it has images as stimuli.
 the experiemnt 'exp_Co3D' has raw files and videos as stimuli.
@@ -26,6 +27,109 @@ the experiemnt 'exp_Co3D' has raw files and videos as stimuli.
 the experiment 'norm_FOSS' does not follow the exp format. Why?
 Thes are images that are used to normalize stuff
 
+## Single session structure
+
+run:
+
+stimulus set might have more than one subject, each subject has more than one session.
+
+run is what I usually call a session
+
+experiment is defined by the stimuli set
+
+Description:
+
+monkey comes into the rig, you do the normalization, then yrou run the experiment (let’s say a stimulus set 1 with monkey 1). Then this will be saved on the local PC. And then you upload to the data server.
+
+## Notes about synchornization
+
+The following code can be found in `mkw_ultra.py` in the repository of the DiCarlo lab and:
+
+
+```python
+filename = os.path.join(mworksRawDir, filenameList[args.session_num])
+photodiode_file = os.path.join(intanRawDir, 'board-ANALOG-IN-1.dat')
+sample_on_file = os.path.join(intanRawDir, 'board-DIGITAL-IN-02.dat')
+```
+
+## Mworks
+
+The code for this is divided in two functions. `dump_events` and `get_events` in `mkw_ultra.py` in the repository of the DiCarlo lab here. They can be find here:
+
+https://github.com/AliyaAbl/DiCarlo_NWB/blob/be36d5f710fd5fa2620a495865d280457bc7a847/spike-tools-chong/spike_tools/mwk_ultra.py#L207-L216
+
+And here:
+https://github.com/AliyaAbl/DiCarlo_NWB/blob/be36d5f710fd5fa2620a495865d280457bc7a847/spike-tools-chong/spike_tools/mwk_ultra.py#L67-L74
+
+
+The variable naming convention is sub-optimal.
+
+```
+names = ['trial_start_line',
+            'correct_fixation',
+            'stimulus_presented',
+            'stim_on_time',
+            'stim_off_time',
+            'stim_on_delay',
+            'stimulus_size',
+            'fixation_window_size',
+            'fixation_point_size_min',
+            'eye_h',
+            'eye_v']
+```
+
+Trial structure:
+One behavioral experiment. Train the monkey to mantain a fix gaze (around ~1 to 2 seconds).
+While the monkey mantain fixation, we first make sure that for the first ~300 ms we are sure that is fixating, then we flash images. The time in between them is the inter stimulus interval.
+
+One trial equals one fixation. And within one trial we present multiple images (e.g. 8 images).
+
+150ms off
+
+
+
+Notes about the columns:
+* `stim_on_time_ms`: onset duration (how long as this image presented)
+* `stim_off_time_ms`: inter stimulus interval
+* `stimulus_order_on_trial`: this goes between 1 and 8 the max value in `stimulus_order_on_trial` corresponds to number of images presented in one trial
+* `trial_start_line` : pulse at the beginning of the trial
+* `correct_fixation`: (boolean) sometimes the monkey breaks the fixation prematurely then it will be 0. So you use this variable to discard. Constantly monitor the eye position, example a monkey correctly fixates 4 out of 8, so the first 4 are valid.
+* `stimulus_presented`: image_id they match the image convention in the file name of the corresponding stimuli set. Typically they are named by count.
+* `stim_on_delay`: From the point of view of the animal, fixation point first comes on, minimal duration to ensure that we are looking at it, the delay time between fixation and the first image presentation.
+* `samp_on_us` : sample in microseconds, counte for mworks, digital counter internally for Mworks.
+* `photodiode_on_us`: time that the photo diode was on
+
+Note:
+total_fixation_time = stim_on_delay +(stim_on_time_ms + stim_off_time_ms) * max(stimulus_order_on_trial)
+
+trial_start_line: the trial starts (what is a trial)
+
+### Rig structure (notes from meeting)
+
+
+Three computers:
+* One for the stimulus presentation (mac) which works as an orchestrator and initiates the experiment. Mworks run on the mac computer and presents the stimuli.
+* Another for eye linke eye tracking.
+* Another for the Intan recording system. Pasive.
+
+There is an Arduino in between the Intan and the mac that converts the USB signal from the mac to a digital flag in the Intan recording system. This is stored in the digital in channels of Intan:
+
+* `board-DIGITAL-IN-01.dat`: beginning of the experiment (stays high during the recording sessions).
+* `board-DIGITAL-IN-02.dat`: stimulus onset from mac computer
+
+
+#### Photodiode
+
+A small corner of the screen is flashed when a stimuli is presented. The photodiode is connected to the Intan recording system in `board-ANALOG-IN-1.dat`. This is another trigger to stimuli onset and is used to deal with frame drop and delay.
+
+Extra note:
+Intan has a delay buffer, triggers one second before, then I Guess the [DIGITAL-IN-02.data](http://DIGITAL-IN-02.data) goes up.
+
+
+
+### Questions:
+* Why have an intermediate preprocessing step here. Why first produce a csv file, why not taking it directly to NWB?
+* Is this the only place were the `stimulis_id` appears?
 
 
 
