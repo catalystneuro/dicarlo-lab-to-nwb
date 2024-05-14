@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 from scipy.signal import ellip, filtfilt
 from spikeinterface.preprocessing.basepreprocessor import (
@@ -72,6 +74,57 @@ class DiCarloBandPassSegment(BasePreprocessorSegment):
 
 
 def notch_filter(signal, f_sampling, f_notch, bandwidth):
+    """Implements a notch filter (e.g., for 50 or 60 Hz) on vector `data`.
+
+    f_sampling = sample rate of data (input Hz or Samples/sec)
+    f_notch = filter notch frequency (input Hz)
+    bandwidth = notch 3-dB bandwidth (input Hz).  A bandwidth of 10 Hz is
+    recommended for 50 or 60 Hz notch filters; narrower bandwidths lead to
+    poor time-domain properties with an extended ringing response to
+    transient disturbances.
+
+    Example:  If neural data was sampled at 30 kSamples/sec
+    and you wish to implement a 60 Hz notch filter:
+
+    """
+    out = np.zeros_like(signal)
+
+    tstep = 1.0 / f_sampling
+    Fc = f_notch * tstep
+
+    L = len(signal)
+
+    # Calculate IIR filter parameters
+    d = math.exp(-2.0 * math.pi * (bandwidth / 2.0) * tstep)
+    b = (1.0 + d * d) * math.cos(2.0 * math.pi * Fc)
+    a0 = 1.0
+    a1 = -b
+    a2 = d * d
+    a = (1.0 + d * d) / 2.0
+    b0 = 1.0
+    b1 = -2.0 * math.cos(2.0 * math.pi * Fc)
+    b2 = 1.0
+
+    out = np.zeros_like(signal)
+    out[:, 0] = signal[:, 0]
+    if signal.shape[1] > 1:
+        out[:, 1] = signal[:, 1]
+
+    for channel_index in range(signal.shape[1]):
+        for sample_index in range(2, L):
+            out[sample_index, channel_index] = (
+                a * b2 * signal[sample_index - 2, channel_index]
+                + a * b1 * signal[sample_index - 1, channel_index]
+                + a * b0 * signal[sample_index, channel_index]
+                - a2 * out[sample_index - 2, channel_index]
+                - a1 * out[sample_index - 1, channel_index]
+            ) / a0
+
+    return out
+
+
+def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
+
     tstep = 1.0 / f_sampling
     Fc = f_notch * tstep
     d = np.exp(-2.0 * np.pi * (bandwidth / 2.0) * tstep)
@@ -127,10 +180,6 @@ class DiCarloNotchSegment(BasePreprocessorSegment):
         return notch_filter(traces, self.f_sampling, self.f_notch, self.bandwidth)
 
 
-import numpy as np
-from spikeinterface.core.job_tools import ChunkRecordingExecutor
-
-
 def init_method(recording, noise_threshold=3):
     # create a local dict per worker
     worker_ctx = {}
@@ -146,24 +195,31 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
     noise_threshold = worker_ctx["noise_threshold"]
 
     traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame)
-    centered_traces = traces - np.median(traces, axis=0)
-    std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6744
-    noiseLevel = -noise_threshold * std_estimate
-
-    # Core of method
-    outside = np.array(centered_traces) < noiseLevel
-    outside = outside.astype(int)  # Convert logical array to int array for diff to work
-    cross = np.concatenate(([outside[0]], np.diff(outside, n=1) > 0))
-
-    idxs = np.nonzero(cross)[0]
-
+    number_of_channels = recording.get_num_channels()
     sampling_frequency = recording.get_sampling_frequency()
     times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
 
-    return times_in_chunk[idxs]
+    spikes_per_channel = []
+    for channel_index in range(number_of_channels):
+        channel_traces = traces[:, channel_index]
+        centered_channel_traces = channel_traces - np.nanmean(channel_traces)
+
+        std_estimate = np.median(np.abs(centered_channel_traces)) / 0.6744
+        noise_level = -noise_threshold * std_estimate
+
+        # Core of method
+        outside = centered_channel_traces < noise_level
+        outside = outside.astype(int)  # Convert logical array to int array for diff to work
+        cross = np.concatenate(([outside[0]], np.diff(outside, n=1) > 0))
+
+        indices_by_channel = np.nonzero(cross)[0]
+
+        spikes_per_channel.append(times_in_chunk[indices_by_channel])
+
+    return spikes_per_channel
 
 
-def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
+def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, worker_ctx):
     recording = worker_ctx["recording"]
     noise_threshold = worker_ctx["noise_threshold"]
 
@@ -172,7 +228,7 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
     times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
 
     # Centering the traces
-    centered_traces = traces - np.median(traces, axis=0)
+    centered_traces = traces - np.nanmean(traces, axis=0)
 
     # Estimating standard deviation by with the MAD
     std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6744
@@ -197,8 +253,8 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
 
 
 if __name__ == "__main__":
-
     from spikeinterface.core.generate import generate_ground_truth_recording
+    from spikeinterface.core.job_tools import ChunkRecordingExecutor
 
     from dicarlo_lab_to_nwb.conversion.pipeline import DiCarloBandPass, DiCarloNotch
 
@@ -225,3 +281,14 @@ if __name__ == "__main__":
         job_name=job_name,
         **job_kwargs,
     )
+
+    values = processor.run()
+
+    spike_times_per_channel = {}
+
+    number_of_chunks = len(values)
+    number_of_channels = recording.get_num_channels()
+
+    for channel_index in range(number_of_channels):
+        channel_spike_times = [times[channel_index] for times in values]
+        spike_times_per_channel[channel_index] = np.concatenate(channel_spike_times)
