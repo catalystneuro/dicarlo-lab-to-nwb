@@ -8,7 +8,7 @@
 These are the files that were shared with us:
 
 ```python
-├── exp_1_shapes    
+├── exp_1_shapes
 ├── exp_Co3D   # Has raw files for Intan, and videos as stimuli
 ├── exp_domain-transfer-2023  # Has raw files for Intan, images as stimuli
 ├── exp_IAPS
@@ -18,7 +18,7 @@ These are the files that were shared with us:
 └── StimulusSets
 ```
 
-We have sessions for 
+We have sessions for
 
 The experiment 'exp_domain-transfer-2023' has raw files for Intan, it has images as stimuli.
 the experiemnt 'exp_Co3D' has raw files and videos as stimuli.
@@ -26,6 +26,9 @@ the experiemnt 'exp_Co3D' has raw files and videos as stimuli.
 the experiment 'norm_FOSS' does not follow the exp format. Why?
 Thes are images that are used to normalize stuff
 
+
+## Probe information
+For this instance each array 96 channels, 400 micrometes apart
 
 
 
