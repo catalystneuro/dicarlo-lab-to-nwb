@@ -30,13 +30,13 @@ def session_to_nwb(
     conversion_options = dict()
 
     # Add Recording
-    file_path = session_intan_raw / "info.rhd"
-    assert file_path.is_file(), f"Intan raw file not found: {file_path}"
-    source_data.update(dict(Recording=dict(file_path=str(file_path))))
-    conversion_options.update(dict(Recording=dict(stub_test=stub_test)))
+    # file_path = session_intan_raw / "info.rhd"
+    # assert file_path.is_file(), f"Intan raw file not found: {file_path}"
+    # source_data.update(dict(Recording=dict(file_path=str(file_path))))
+    # conversion_options.update(dict(Recording=dict(stub_test=stub_test)))
 
     # Add behavior
-    assert file_path.is_file(), f"Mworks file not found: {mworks_file_path}"
+    assert mworks_file_path.is_file(), f"Mworks file not found: {mworks_file_path}"
     source_data.update(dict(Behavior=dict(file_path=str(mworks_file_path))))
 
     converter = ConversionNWBConverter(source_data=source_data)
