@@ -131,6 +131,9 @@ Intan has a delay buffer, triggers one second before, then I Guess the [DIGITAL-
 * Why have an intermediate preprocessing step here. Why first produce a csv file, why not taking it directly to NWB?
 * Is this the only place were the `stimulis_id` appears?
 
+## Probe information
+For this instance each array 96 channels, 400 micrometes apart
+
 
 
 ## Spike thresholding / Peak detection pipeline

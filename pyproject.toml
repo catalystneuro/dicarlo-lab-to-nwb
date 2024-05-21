@@ -17,7 +17,10 @@ classifiers = [
 
 dependencies = [
   "neuroconv",
-  "nwbinspector",
+  "spikeinterface @ git+https://github.com/spikeinterface/spikeinterface@main",
+  "scipy",
+  "neo>=0.13.1",
+  "matplotlib",
 ]
 
 [project.urls]

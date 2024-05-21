@@ -5,7 +5,16 @@ NWB conversion scripts for DiCarlo lab data to the [Neurodata Without Borders](h
 ## Installation
 ## Basic installation
 
-You can install the latest release of the package with pip:
+You can install the package by cloning from github and installing
+
+```bash
+git clone https://github.com/catalystneuro/dicarlo-lab-to-nwb
+cd dicarlo-lab-to-nwb
+pip install .
+```
+
+
+You can install the latest release of the package with pip (not year released)
 
 ```
 pip install dicarlo-lab-to-nwb
