@@ -1,6 +1,15 @@
 # Notes concerning the conversion conversion
 
 
+# Questions
+
+### Questions:
+* Why have an intermediate preprocessing step here. Why first produce a csv file, why not taking it directly to NWB? For ourselves after discussing with Yoon is better if we take the csv file as input. Reason being that Mworks is too general and they do have some pre-processing in the middle (mainly for synchronization with the pulse mechanisms).
+* Is this the only place were the `stimulis_id` appears?
+* What is the h5 files for? They seem to contain psths.
+
+* What is quality recording in the nwbfile for preprocessed data.
+
 
 
 ## Notes about session structure
@@ -25,6 +34,147 @@ the experiemnt 'exp_Co3D' has raw files and videos as stimuli.
 
 the experiment 'norm_FOSS' does not follow the exp format. Why?
 Thes are images that are used to normalize stuff
+
+The mworks processed files have a different naming convention:
+
+```python
+PosixPath('.../exp_domain-transfer-2023/exp_domain-transfer-2023.sub_pico/raw_files/mworksproc/pico_domain-transfer-2023_230214_140610_mwk.csv')
+```
+
+Note that the date `230214`  is not the same as `20230214` which is used to access other files. They cut the first two digits of the year.
+
+## Single session structure
+
+run:
+
+stimulus set might have more than one subject, each subject has more than one session.
+
+run is what I usually call a session
+
+experiment is defined by the stimuli set
+
+Description:
+
+monkey comes into the rig, you do the normalization, then yrou run the experiment (let’s say a stimulus set 1 with monkey 1). Then this will be saved on the local PC. And then you upload to the data server.
+
+## Notes about synchornization
+
+The following code can be found in `mkw_ultra.py` in the repository of the DiCarlo lab and:
+
+
+```python
+filename = os.path.join(mworksRawDir, filenameList[args.session_num])
+photodiode_file = os.path.join(intanRawDir, 'board-ANALOG-IN-1.dat')
+sample_on_file = os.path.join(intanRawDir, 'board-DIGITAL-IN-02.dat')
+```
+
+## Mworks
+
+### Notes about trial structure (2024-05-16)
+300 MWorks determines if is he engaged
+
+there is a mechnical delay in communication between the Mworks computer and the photodioed in this case and its range is ~ 20 to 50 ms
+
+
+Fixation point comes on
+Then the 300 millisecond
+
+The photodioed is always locked / synch with the image presentation (is actually independent of stim_on_delay_ms)
+
+photodiode_on_ms: the "exact" time when the image is show.
+
+
+How is the `start_time`
+
+Meaning of trial (start)
+1) The monkey start fixating: `photodiode_on_ms` - `stim_on_delay_ms` (only for the stimulus_order_in_trial=1)
+2) Stimuli presentation starts: `photodiode_on_ms`
+
+(ending)
+1) Look at the last image, `photon_diod_on_ms` + `stim_on_time_ms` + `stim_on_time_off`
+2) Same
+
+
+The first structure will have way more trials, the second structure will not.
+
+
+
+
+
+### First notes about Mworks
+The code for this is divided in two functions. `dump_events` and `get_events` in `mkw_ultra.py` in the repository of the DiCarlo lab here. They can be find here:
+
+https://github.com/AliyaAbl/DiCarlo_NWB/blob/be36d5f710fd5fa2620a495865d280457bc7a847/spike-tools-chong/spike_tools/mwk_ultra.py#L207-L216
+
+And here:
+https://github.com/AliyaAbl/DiCarlo_NWB/blob/be36d5f710fd5fa2620a495865d280457bc7a847/spike-tools-chong/spike_tools/mwk_ultra.py#L67-L74
+
+
+### First notes about trial structure
+The variable naming convention is sub-optimal.
+
+```
+names = ['trial_start_line',
+            'correct_fixation',
+            'stimulus_presented',
+            'stim_on_time',
+            'stim_off_time',
+            'stim_on_delay',
+            'stimulus_size',
+            'fixation_window_size',
+            'fixation_point_size_min',
+            'eye_h',
+            'eye_v']
+```
+
+Trial structure:
+One behavioral experiment. Train the monkey to mantain a fix gaze (around ~1 to 2 seconds).
+While the monkey mantain fixation, we first make sure that for the first ~300 ms we are sure that is fixating, then we flash images. The time in between them is the inter stimulus interval.
+
+One trial equals one fixation. And within one trial we present multiple images (e.g. 8 images).
+
+150ms off
+
+
+
+Notes about the columns:
+* `stim_on_time_ms`: onset duration (how long as this image presented)
+* `stim_off_time_ms`: inter stimulus interval
+* `stimulus_order_on_trial`: this goes between 1 and 8 the max value in `stimulus_order_on_trial` corresponds to number of images presented in one trial
+* `trial_start_line` : pulse at the beginning of the trial
+* `correct_fixation`: (boolean) sometimes the monkey breaks the fixation prematurely then it will be 0. So you use this variable to discard. Constantly monitor the eye position, example a monkey correctly fixates 4 out of 8, so the first 4 are valid.
+* `stimulus_presented`: image_id they match the image convention in the file name of the corresponding stimuli set. Typically they are named by count.
+* `stim_on_delay`: From the point of view of the animal, fixation point first comes on, minimal duration to ensure that we are looking at it, the delay time between fixation and the first image presentation.
+* `samp_on_us` : sample in microseconds, counte for mworks, digital counter internally for Mworks.
+* `photodiode_on_us`: time that the photo diode was on
+
+Note:
+total_fixation_time = stim_on_delay +(stim_on_time_ms + stim_off_time_ms) * max(stimulus_order_on_trial)
+
+trial_start_line: the trial starts (what is a trial)
+
+### Rig structure (notes from meeting)
+
+
+Three computers:
+* One for the stimulus presentation (mac) which works as an orchestrator and initiates the experiment. Mworks run on the mac computer and presents the stimuli.
+* Another for eye linke eye tracking.
+* Another for the Intan recording system. Pasive.
+
+There is an Arduino in between the Intan and the mac that converts the USB signal from the mac to a digital flag in the Intan recording system. This is stored in the digital in channels of Intan:
+
+* `board-DIGITAL-IN-01.dat`: beginning of the experiment (stays high during the recording sessions).
+* `board-DIGITAL-IN-02.dat`: stimulus onset from mac computer
+
+
+#### Photodiode
+
+A small corner of the screen is flashed when a stimuli is presented. The photodiode is connected to the Intan recording system in `board-ANALOG-IN-1.dat`. This is another trigger to stimuli onset and is used to deal with frame drop and delay.
+
+Extra note:
+Intan has a delay buffer, triggers one second before, then I Guess the [DIGITAL-IN-02.data](http://DIGITAL-IN-02.data) goes up.
+
+
 
 
 ## Probe information
@@ -144,3 +294,48 @@ for i in range(nrSegments):
 
 In SpikeInterface lingo:
 nrSegments = number of chunks and v is a chunk, f_sampling is the recording sampling frequency.
+
+
+### How long does the computation take
+
+Note: cluster might fail for the channel
+Right now the algoritm (if the cluster does not fail, 1 and 2 hours for a 3 hour session. That means all the channels)
+Kilosort comparison on their end takes 1 hour. With gpu enabled, (kilosort 2 and kilosort 3)
+
+Kilosort 4:  TODO send them the script
+
+Manually curation,
+
+## PSTH
+
+The function for calculating the PSTH is located here:
+
+
+https://github.com/AliyaAbl/DiCarlo_NWB/blob/be36d5f710fd5fa2620a495865d280457bc7a847/spike-tools-chong/spike_tools/utils/spikeutils.py#L125-L248
+
+I think that the critical line is here:
+
+```python
+psth_matrix = np.full((len(samp_on_ms), len(timebase)), np.nan)
+
+for i in range(len(samp_on_ms)):
+    sidx = np.floor(osamp*(spikeTime[(spikeTime>=(samp_on_ms[i]+start_time))*(spikeTime<(samp_on_ms[i]+stop_time))]-(samp_on_ms[i]+start_time))).astype(int)
+    psth_bin[i, sidx] = 1
+    psth_matrix[i] = np.sum(np.reshape(psth_bin[i], [len(timebase), osamp*timebin]), axis=1)
+
+# Re-order the psth to image x reps
+max_number_of_reps = max(np.bincount(mwk_data['stimulus_presented']))  # Max reps obtained for any image
+if max_number_of_reps == 0:
+    exit()
+mwk_data['stimulus_presented'] = mwk_data['stimulus_presented'].astype(int)  # To avoid indexing errors
+if n_stimuli is None:
+    image_numbers = np.unique(mwk_data['stimulus_presented'])  # TODO: if not all images are shown (for eg, exp cut short), you'll have to manually type in total # images
+else:
+    image_numbers = np.arange(1,n_stimuli+1) # all of my image starts with #1
+psth = np.full((len(image_numbers), max_number_of_reps, len(timebase)), np.nan)  # Re-ordered PSTH
+
+for i, image_num in enumerate(image_numbers):
+    index_in_table = np.where(mwk_data.stimulus_presented == image_num)[0]
+    selected_cells = psth_matrix[index_in_table, :]
+    psth[i, :selected_cells.shape[0], :] = selected_cells
+```
