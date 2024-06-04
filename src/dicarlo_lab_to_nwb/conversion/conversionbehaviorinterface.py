@@ -64,5 +64,5 @@ class ConversionBehaviorInterface(BaseDataInterface):
         columns_to_write = ["start_time", "stop_time"] + list(descriptions.keys())
 
         # Extract a pandas dictionary with each row of the columns_to_write
-        for i, row in mwkorks_df[columns_to_write].iterrows():
+        for _, row in mwkorks_df[columns_to_write].iterrows():
             nwbfile.add_trial(**row.to_dict())
