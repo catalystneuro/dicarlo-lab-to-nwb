@@ -78,12 +78,12 @@ Each conversion is organized in a directory of its own in the `src` directory:
     ├── setup.py
     └── src
         ├── dicarlo_lab_to_nwb
-        │   ├── conversion_directory_1
+        │   ├── another_conversion
         │   └── conversion
-        │       ├── conversionbehaviorinterface.py
-        │       ├── conversion_convert_session.py
-        │       ├── conversion_metadata.yml
-        │       ├── conversionnwbconverter.py
+        │       ├── behaviorinterface.py
+        │       ├── convert_session.py
+        │       ├── metadata.yml
+        │       ├── nwbconverter.py
         │       ├── conversion_requirements.txt
         │       ├── conversion_notes.md
 
