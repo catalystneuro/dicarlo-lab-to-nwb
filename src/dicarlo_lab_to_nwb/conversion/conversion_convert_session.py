@@ -1,8 +1,7 @@
 """Primary script to run to convert an entire session for of data using the NWBConverter."""
 
-import datetime
+from datetime import datetime
 from pathlib import Path
-from typing import Union
 from zoneinfo import ZoneInfo
 
 from neuroconv.utils import dict_deep_update, load_dict_from_file
@@ -11,41 +10,54 @@ from dicarlo_lab_to_nwb.conversion import ConversionNWBConverter
 
 
 def session_to_nwb(
-    session_intan_raw: Union[str, Path],
-    mworks_file_path: Union[str, Path],
-    output_dir_path: Union[str, Path],
+    subject: str,
+    session_date: str,
+    session_time: str,
+    intan_session_folder: str | Path,
+    mworks_processed_folder: str | Path,
+    stimuli_folder: str | Path,
+    output_dir_path: str | Path,
     stub_test: bool = False,
 ):
 
-    session_intan_raw = Path(session_intan_raw)
+    intan_session_folder = Path(intan_session_folder)
+    mworks_processed_folder = Path(mworks_processed_folder)
+    stimuli_folder = Path(stimuli_folder)
+
     output_dir_path = Path(output_dir_path)
     if stub_test:
         output_dir_path = output_dir_path / "nwb_stub"
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    session_id = "subject_identifier_usually"
+    session_id = f"{subject}_{session_date}_{session_time}"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
     source_data = dict()
     conversion_options = dict()
 
     # Add Recording
-    # file_path = session_intan_raw / "info.rhd"
-    # assert file_path.is_file(), f"Intan raw file not found: {file_path}"
-    # source_data.update(dict(Recording=dict(file_path=str(file_path))))
-    # conversion_options.update(dict(Recording=dict(stub_test=stub_test)))
+    intan_file_path = intan_session_folder / "info.rhd"
+    assert intan_file_path.is_file(), f"Intan raw file not found: {intan_file_path}"
+    source_data.update(dict(Recording=dict(file_path=intan_file_path)))
+    conversion_options.update(dict(Recording=dict(stub_test=stub_test)))
 
     # Add behavior
-    assert mworks_file_path.is_file(), f"Mworks file not found: {mworks_file_path}"
-    source_data.update(dict(Behavior=dict(file_path=str(mworks_file_path))))
+    session_id = f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
+    mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
+
+    assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
+    source_data.update(dict(Behavior=dict(file_path=mworks_processed_file_path)))
 
     converter = ConversionNWBConverter(source_data=source_data)
 
+    # Parse the string into a datetime object
+    datetime_str = f"{session_date} {session_time}"
+    datetime_format = "%Y%m%d %H%M%S"
+    session_start_time = datetime.strptime(datetime_str, datetime_format).replace(tzinfo=ZoneInfo("US/Eastern"))
+
     # Add datetime to conversion
     metadata = converter.get_metadata()
-    datetime.datetime(year=2020, month=1, day=1, tzinfo=ZoneInfo("US/Eastern"))
-    date = datetime.datetime.today()  # TO-DO: Get this from author
-    metadata["NWBFile"]["session_start_time"] = date
+    metadata["NWBFile"]["session_start_time"] = session_start_time
 
     # Update default metadata with the editable in the corresponding yaml file
     editable_metadata_path = Path(__file__).parent / "conversion_metadata.yaml"
@@ -66,26 +78,44 @@ def session_to_nwb(
 
 if __name__ == "__main__":
 
-    # Parameters for conversion
-    base_directory = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
+    image_set_name = "domain-transfer-2023"
     subject = "pico"
-    experiment_directory = base_directory / "exp_domain-transfer-2023" / f"exp_domain-transfer-2023.sub_{subject}"
-    assert experiment_directory.is_dir(), f"Experiment directory not found: {experiment_directory}"
-    raw_files_directory = experiment_directory / "raw_files"
-    assert raw_files_directory.is_dir(), f"Raw files directory not found: {raw_files_directory}"
+    session_date = "20230215"
+    session_time = "161322"
 
-    session_intan_raw = raw_files_directory / "intanraw" / f"pico_domain-transfer-2023_230214_140610"
-    assert session_intan_raw.is_dir(), f"Intan raw session directory not found: {session_intan_raw}"
-    mworks_file_path = raw_files_directory / "mworksproc" / f"pico_domain-transfer-2023_230214_140610_mwk.csv"
+    data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
+    assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
 
-    data_dir_path = Path("/Directory/With/Raw/Formats/")
-    stimuli_dir_path = Path("/Directory/With/Stimuli/Files/")
+    experiment_folder = data_folder / f"exp_{image_set_name}"
+    assert experiment_folder.is_dir(), f"Experiment folder not found: {experiment_folder}"
+
+    subject_folder = experiment_folder / f"exp_{image_set_name}.sub_{subject}"
+    assert subject_folder.is_dir(), f"Subject folder not found: {subject_folder}"
+
+    raw_data_folder = subject_folder / "raw_files"
+    assert raw_data_folder.is_dir(), f"Raw files folder not found: {raw_data_folder}"
+
+    intan_session_folder = (
+        raw_data_folder / "intanraw" / f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
+    )
+    assert intan_session_folder.is_dir(), f"Intan session folder not found: {intan_session_folder}"
+
+    mworks_processed_folder = raw_data_folder / "mworksproc"
+    assert mworks_processed_folder.is_dir(), f"mworksproc folder not found: {mworks_processed_folder}"
+
+    stimuli_folder = data_folder / "StimulusSets"
+    assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
+
     output_dir_path = Path.home() / "conversion_nwb"
     stub_test = True
 
     session_to_nwb(
-        session_intan_raw=session_intan_raw,
-        mworks_file_path=mworks_file_path,
+        subject=subject,
+        session_date=session_date,
+        session_time=session_time,
+        intan_session_folder=intan_session_folder,
+        mworks_processed_folder=mworks_processed_folder,
+        stimuli_folder=stimuli_folder,
         output_dir_path=output_dir_path,
         stub_test=stub_test,
     )

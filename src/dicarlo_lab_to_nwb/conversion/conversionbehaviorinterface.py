@@ -6,7 +6,9 @@ import numpy as np
 import pandas as pd
 from neuroconv.basedatainterface import BaseDataInterface
 from neuroconv.utils import DeepDict
+from pynwb.base import ImageReferences
 from pynwb.file import NWBFile
+from pynwb.image import GrayscaleImage, Images, IndexSeries, RGBImage
 
 
 class ConversionBehaviorInterface(BaseDataInterface):
@@ -35,34 +37,9 @@ class ConversionBehaviorInterface(BaseDataInterface):
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
         ground_truth_time_column = "samp_on_us"
-        mwkorks_df["start_time"] = mwkorks_df[ground_truth_time_column] / 1e6
-        mwkorks_df["stimuli_presentation_time_ms"] = mwkorks_df["stim_on_time_ms"]
-        mwkorks_df["inter_stimuli_interval_ms"] = mwkorks_df["stim_off_time_ms"]
-        mwkorks_df["stop_time"] = mwkorks_df["start_time"] + mwkorks_df["stimuli_presentation_time_ms"] / 1e3
+        image_presentation_time = mwkorks_df[ground_truth_time_column] / 1e6
+        stimulus_id = mwkorks_df["stimulus_presented"]
 
-        mwkorks_df["stimuli_block_index"] = (
-            mwkorks_df["stimulus_order_in_trial"]
-            .diff()  # Differences (5 - 1)
-            .lt(0)  # Gets the point where it goes back to 1
-            .cumsum()
-        )
+        unique_stimulus_ids = stimulus_id.unique()
 
-        descriptions = {
-            "stimuli_presentation_time_ms": "Duration of the stimulus presentation in milliseconds",
-            "inter_stimuli_interval_ms": "Inter stimulus interval in milliseconds",
-            "stimulus_presented": "The stimulus ID presented",
-            "fixation_correct": "Whether the fixation was correct during this stimulus presentation",
-            "stimuli_block_index": "The index of the block of stimuli presented",
-            "stimulus_size_degrees": "The size of the stimulus in degrees",
-            "fixation_window_size_degrees": "The size of the fixation window in degrees",
-            "fixation_point_size_degrees": "The size of the fixation point in degrees",
-        }
-
-        for column_name, description in descriptions.items():
-            nwbfile.add_trial_column(name=column_name, description=description)
-
-        columns_to_write = ["start_time", "stop_time"] + list(descriptions.keys())
-
-        # Extract a pandas dictionary with each row of the columns_to_write
-        for i, row in mwkorks_df[columns_to_write].iterrows():
-            nwbfile.add_trial(**row.to_dict())
+        x = 1
