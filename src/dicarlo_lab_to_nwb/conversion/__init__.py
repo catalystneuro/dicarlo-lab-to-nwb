@@ -1,3 +1,2 @@
 from .conversionbehaviorinterface import ConversionBehaviorInterface
 from .conversionnwbconverter import ConversionNWBConverter
-from .stimuli_interface import StimuliInterface

@@ -39,7 +39,7 @@ def session_to_nwb(
     # Add Recording
     intan_file_path = intan_session_folder / "info.rhd"
     assert intan_file_path.is_file(), f"Intan raw file not found: {intan_file_path}"
-    source_data.update(dict(Recording=dict(file_path=intan_file_path)))
+    source_data.update(dict(Recording=dict(file_path=intan_file_path, ignore_integrity_checks=True)))
     conversion_options.update(dict(Recording=dict(stub_test=stub_test)))
 
     # Add behavior
@@ -92,6 +92,10 @@ if __name__ == "__main__":
     subject = "pico"
     session_date = "20230215"
     session_time = "161322"
+
+    # This one has a jump in time
+    session_date = "20230214"
+    session_time = "140610"
 
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
