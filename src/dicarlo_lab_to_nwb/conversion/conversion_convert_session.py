@@ -10,6 +10,7 @@ from dicarlo_lab_to_nwb.conversion import ConversionNWBConverter
 
 
 def session_to_nwb(
+    image_set_name: str,
     subject: str,
     session_date: str,
     session_time: str,
@@ -46,7 +47,16 @@ def session_to_nwb(
     mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
 
     assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
-    source_data.update(dict(Behavior=dict(file_path=mworks_processed_file_path)))
+    # source_data.update(dict(Behavior=dict(file_path=mworks_processed_file_path)))
+
+    # Add stimuli
+    source_data.update(
+        dict(
+            Stimuli=dict(
+                file_path=mworks_processed_file_path, folder_path=stimuli_folder, image_set_name=image_set_name
+            )
+        )
+    )
 
     converter = ConversionNWBConverter(source_data=source_data)
 
@@ -65,7 +75,7 @@ def session_to_nwb(
     metadata = dict_deep_update(metadata, editable_metadata)
 
     subject_metadata = metadata["Subject"]
-    subject_metadata["subject_id"] = "subject_id"
+    subject_metadata["subject_id"] = f"{subject}"
 
     # Run conversion
     converter.run_conversion(
@@ -110,6 +120,7 @@ if __name__ == "__main__":
     stub_test = True
 
     session_to_nwb(
+        image_set_name=image_set_name,
         subject=subject,
         session_date=session_date,
         session_time=session_time,
