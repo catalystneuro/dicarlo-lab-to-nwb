@@ -26,23 +26,6 @@ def bandpass_filter(signal, f_sampling, f_low, f_high):
     return filtfilt(b, a, signal, padlen=padlen)
 
 
-def create_filter_coefficients(f_low, f_high, f_sampling):
-
-    wl = f_low / (f_sampling / 2.0)
-    wh = f_high / (f_sampling / 2.0)
-    wn = [wl, wh]
-
-    # Designs a 2nd-order Elliptic band-pass filter which passes
-    # frequencies between normalized f_low and f_high, and with 0.1 dB of ripple
-    # in the passband, and 40 dB of attenuation in the stopband.
-    b, a = ellip(2, 0.1, 40, wn, "bandpass", analog=False)
-    # To match Matlab output, we change default padlen from
-    # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
-    padlen = 3 * (max(len(a), len(b)) - 1)
-
-    return b, a, padlen
-
-
 def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
 
     wl = f_low / (f_sampling / 2.0)
