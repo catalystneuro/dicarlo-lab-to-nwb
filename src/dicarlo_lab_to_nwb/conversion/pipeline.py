@@ -26,6 +26,35 @@ def bandpass_filter(signal, f_sampling, f_low, f_high):
     return filtfilt(b, a, signal, padlen=padlen)
 
 
+from spikeinterface.preprocessing import FilterRecording
+
+recording = dummy_recording()
+
+
+def create_filter_coefficients(f_low, f_high, f_sampling):
+
+    wl = f_low / (f_sampling / 2.0)
+    wh = f_high / (f_sampling / 2.0)
+    wn = [wl, wh]
+
+    # Designs a 2nd-order Elliptic band-pass filter which passes
+    # frequencies between normalized f_low and f_high, and with 0.1 dB of ripple
+    # in the passband, and 40 dB of attenuation in the stopband.
+    b, a = ellip(2, 0.1, 40, wn, "bandpass", analog=False)
+    # To match Matlab output, we change default padlen from
+    # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
+    padlen = 3 * (max(len(a), len(b)) - 1)
+
+    return b, a, padlen
+
+
+b, a, padlen = create_filter_coefficients(300.0, 6000.0, recording.get_sampling_frequency())
+
+filer_type = "ba"  # This is a set of cofficients for a filter (ba) numerator or numerator
+coeff = np.asarray([b, a])
+filtered_recording = FilterRecording(recording, filter_type="ba", coeff=[b, a])
+
+
 def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
 
     wl = f_low / (f_sampling / 2.0)

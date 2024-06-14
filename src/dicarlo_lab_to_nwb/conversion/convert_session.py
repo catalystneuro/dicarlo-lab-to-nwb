@@ -1,5 +1,6 @@
 """Primary script to run to convert an entire session for of data using the NWBConverter."""
 
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -20,6 +21,8 @@ def session_to_nwb(
     output_dir_path: str | Path,
     stub_test: bool = False,
 ):
+
+    start = time.time()
 
     intan_session_folder = Path(intan_session_folder)
     mworks_processed_folder = Path(mworks_processed_folder)
@@ -47,7 +50,7 @@ def session_to_nwb(
     mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
 
     assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
-    # source_data.update(dict(Behavior=dict(file_path=mworks_processed_file_path)))
+    source_data.update(dict(Behavior=dict(file_path=mworks_processed_file_path)))
 
     # Add stimuli
     source_data.update(
@@ -84,6 +87,9 @@ def session_to_nwb(
         conversion_options=conversion_options,
         overwrite=True,
     )
+
+    stop_time = time.time()
+    print(f"Conversion took {stop_time - start:.2f} seconds")
 
 
 if __name__ == "__main__":
