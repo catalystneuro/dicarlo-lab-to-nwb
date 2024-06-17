@@ -52,8 +52,10 @@ class StimuliInterface(BaseDataInterface):
             image_name = f"im{stimulus_id}"
             image_file_path = self.stimuli_folder / f"{image_name}.png"
             assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
-            image_array = np.array(Image.open(image_file_path))
-            image_kwargs = dict(name=image_name, data=image_array)
+            image = Image.open(image_file_path)
+            image_array = np.array(image)
+            # image_array = np.rot90(image_array, k=3)
+            image_kwargs = dict(name=image_name, data=image_array, description="stimuli_image")
             if image_array.ndim == 2:
                 image = GrayscaleImage(**image_kwargs)
             elif image_array.ndim == 3:
@@ -83,6 +85,7 @@ class StimuliInterface(BaseDataInterface):
             indexed_images=images_container,
             unit="N/A",
             timestamps=image_presentation_time.values,
+            description="Stimulus presentation index",
         )
 
         nwbfile.add_stimulus(images_container)
