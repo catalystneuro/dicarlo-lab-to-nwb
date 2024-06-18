@@ -20,10 +20,10 @@ def bandpass_filter(signal, f_sampling, f_low, f_high):
     # To match Matlab output, we change default padlen from
     # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
     padlen = 3 * (max(len(a), len(b)) - 1)
-
-    # TODO, test if it vectorizes makes a difference
-
-    return filtfilt(b, a, signal, padlen=padlen)
+    output = np.zeros_like(signal, dtype=np.float64)
+    for channel_index in range(signal.shape[1]):
+        output[:, channel_index] = filtfilt(b, a, signal[:, channel_index], axis=0, padlen=padlen)
+    return output
 
 
 def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
@@ -45,7 +45,7 @@ def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
 
 class DiCarloBandPass(BasePreprocessor):
 
-    def __init__(self, recording, f_low, f_high):
+    def __init__(self, recording, f_low, f_high, vectorized=False):
         BasePreprocessor.__init__(self, recording)
         self.f_low = f_low
         self.f_high = f_high
@@ -53,24 +53,35 @@ class DiCarloBandPass(BasePreprocessor):
 
         for parent_segment in recording._recording_segments:
 
-            segment = DiCarloBandPassSegment(parent_segment, self.f_sampling, self.f_low, self.f_high)
+            segment = DiCarloBandPassSegment(
+                parent_segment, self.f_sampling, self.f_low, self.f_high, vectorized=vectorized
+            )
             self.add_recording_segment(segment)
+
+        self._kwargs = {
+            "f_low": f_low,
+            "f_high": f_high,
+            "vectorized": vectorized,
+        }
 
 
 class DiCarloBandPassSegment(BasePreprocessorSegment):
 
-    def __init__(self, parent_segment, f_sampling, f_low, f_high):
+    def __init__(self, parent_segment, f_sampling, f_low, f_high, vectorized=False):
         BasePreprocessorSegment.__init__(self, parent_segment)
         self.parent_segment = parent_segment
         self.f_sampling = f_sampling
         self.f_low = f_low
         self.f_high = f_high
+        self.vectorized = vectorized
 
     def get_traces(self, start_frame, end_frame, channel_indices):
 
         traces = self.parent_segment.get_traces(start_frame, end_frame, channel_indices)
-
-        return bandpass_filter(traces, self.f_sampling, self.f_low, self.f_high)
+        if self.vectorized:
+            return bandpass_filter_vectorized(traces, self.f_sampling, self.f_low, self.f_high)
+        else:
+            return bandpass_filter(traces, self.f_sampling, self.f_low, self.f_high)
 
 
 def notch_filter(signal, f_sampling, f_notch, bandwidth):
@@ -156,28 +167,45 @@ def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
 
 
 class DiCarloNotch(BasePreprocessor):
-    def __init__(self, recording, f_notch, bandwidth):
+    def __init__(self, recording, f_notch, bandwidth, vectorized=False):
         super().__init__(recording)
         self.f_notch = f_notch
         self.bandwidth = bandwidth
         self.f_sampling = recording.get_sampling_frequency()
 
         for parent_segment in recording._recording_segments:
-            segment = DiCarloNotchSegment(parent_segment, self.f_sampling, self.f_notch, self.bandwidth)
+            segment = DiCarloNotchSegment(
+                parent_segment,
+                self.f_sampling,
+                self.f_notch,
+                self.bandwidth,
+                vectorized=vectorized,
+            )
             self.add_recording_segment(segment)
+
+        self._kwargs = {
+            "f_notch": f_notch,
+            "bandwidth": bandwidth,
+            "vectorized": vectorized,
+        }
 
 
 class DiCarloNotchSegment(BasePreprocessorSegment):
-    def __init__(self, segment, f_sampling, f_notch, bandwidth):
+    def __init__(self, segment, f_sampling, f_notch, bandwidth, vectorized=False):
         super().__init__(segment)
         self.parent_segment = segment
         self.f_sampling = f_sampling
         self.f_notch = f_notch
         self.bandwidth = bandwidth
+        self.vectorized = vectorized
 
     def get_traces(self, start_frame, end_frame, channel_indices):
         traces = self.parent_segment.get_traces(start_frame, end_frame, channel_indices)
-        return notch_filter(traces, self.f_sampling, self.f_notch, self.bandwidth)
+
+        if self.vectorized:
+            return notch_filter_vectorized(traces, self.f_sampling, self.f_notch, self.bandwidth)
+        else:
+            return notch_filter(traces, self.f_sampling, self.f_notch, self.bandwidth)
 
 
 def init_method(recording, noise_threshold=3):
