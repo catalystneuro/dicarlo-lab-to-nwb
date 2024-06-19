@@ -288,7 +288,7 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
 
 def thresholding_preprocessing(
     recording: BaseRecording,
-    f_notch: float = 50.0,
+    f_notch: float = 60.0,
     bandwidth: float = 10,
     f_low: float = 300.0,
     f_high: float = 6_000.0,
@@ -327,18 +327,19 @@ def thresholding_peak_detection(
 
     spike_times_per_channel = {}
 
-    number_of_channels = recording.get_num_channels()
+    channel_ids = recording.get_channel_ids()
 
-    for channel_index in range(number_of_channels):
+    for channel_index, channel_id in enumerate(channel_ids):
         channel_spike_times = [times[channel_index] for times in values]
-        spike_times_per_channel[channel_index] = np.concatenate(channel_spike_times)
+        channel_ids
+        spike_times_per_channel[channel_id] = np.concatenate(channel_spike_times)
 
     return spike_times_per_channel
 
 
 def thresholding_pipeline(
     recording: BaseRecording,
-    f_notch: float = 50.0,
+    f_notch: float = 60.0,
     bandwidth: float = 10,
     f_low: float = 300.0,
     f_high: float = 6_000.0,
@@ -373,7 +374,7 @@ if __name__ == "__main__":
 
     recording, sorting = generate_ground_truth_recording(num_channels=4, num_units=1, durations=[1], seed=0)
 
-    f_notch = 50
+    f_notch = 60
     bandwidth = 10
     f_low = 300.0
     f_high = 6000.0
