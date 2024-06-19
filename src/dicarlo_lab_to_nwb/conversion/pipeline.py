@@ -2,6 +2,7 @@ import math
 
 import numpy as np
 from scipy.signal import ellip, filtfilt
+from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
 from spikeinterface.preprocessing.basepreprocessor import (
     BasePreprocessor,
     BasePreprocessorSegment,
@@ -258,7 +259,7 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     # Centering the traces
     centered_traces = traces - np.nanmean(traces, axis=0)
 
-    # Estimating standard deviation by with the MAD
+    # Estimating standard deviation with the MAD
     std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6744
 
     # Calculating the noise level threshold for each channel
@@ -266,8 +267,13 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
 
     # Detecting crossings below the noise level for each channel
     outside = centered_traces < noise_level[np.newaxis, :]
+
+    # Creating a cross_diff array with prepend to ensure we capture the initial crossing
     cross_diff = np.diff(outside.astype(int), axis=0, prepend=outside[0:1, :])
     cross = cross_diff > 0
+
+    # Checking the first point separately
+    cross[0, :] = outside[0, :]
 
     # Find indices where crossings occur
     peaks_idx = np.nonzero(cross)
@@ -280,29 +286,35 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     return all_peak_times
 
 
-if __name__ == "__main__":
-    from spikeinterface.core.generate import generate_ground_truth_recording
-    from spikeinterface.core.job_tools import ChunkRecordingExecutor
+def di_carlo_preprocessing(
+    recording: BaseRecording,
+    f_notch: float = 50.0,
+    bandwidth: float = 10,
+    f_low: float = 300.0,
+    f_high: float = 6_000.0,
+    vectorized: bool = True,
+) -> BasePreprocessor:
 
-    from dicarlo_lab_to_nwb.conversion.pipeline import DiCarloBandPass, DiCarloNotch
+    notched_recording = DiCarloNotch(recording, f_notch=f_notch, bandwidth=bandwidth, vectorized=vectorized)
+    preprocessed_recording = DiCarloBandPass(notched_recording, f_low=f_low, f_high=f_high, vectorized=vectorized)
 
-    recording, sorting = generate_ground_truth_recording(num_channels=4, num_units=1, durations=[1], seed=0)
-    recording, sorting
+    return preprocessed_recording
 
-    f_notch = 50
-    bandwidth = 10
-    f_low = 300.0
-    f_high = 6000.0
 
-    notched_recording = DiCarloNotch(recording, f_notch=f_notch, bandwidth=bandwidth)
-    preprocessed_recording = DiCarloBandPass(notched_recording, f_low=f_low, f_high=f_high)
-
+def di_carlo_peak_detection(
+    recording: BaseRecording,
+    noise_threshold: float = 3,
+    vectorized: bool = True,
+    job_kwargs: dict = None,
+) -> dict:
     job_name = "DiCarloPeakDetectionPipeline"
-    job_kwargs = dict(n_jobs=1, verbose=True, progress_bar=True, chunk_duration=1.0)
-    init_args = (preprocessed_recording, 3)
+
+    if job_kwargs is None:
+        job_kwargs = dict(n_jobs=1, verbose=True, progress_bar=True, chunk_duration=1.0)
+    init_args = (recording, noise_threshold)
     processor = ChunkRecordingExecutor(
         recording,
-        calculate_peak_in_chunks,
+        calculate_peak_in_chunks_vectorized if vectorized else calculate_peak_in_chunks,
         init_method,
         init_args,
         handle_returns=True,
@@ -314,9 +326,63 @@ if __name__ == "__main__":
 
     spike_times_per_channel = {}
 
-    number_of_chunks = len(values)
     number_of_channels = recording.get_num_channels()
 
     for channel_index in range(number_of_channels):
         channel_spike_times = [times[channel_index] for times in values]
         spike_times_per_channel[channel_index] = np.concatenate(channel_spike_times)
+
+    return spike_times_per_channel
+
+
+def di_carlo_pipeline(
+    recording: BaseRecording,
+    f_notch: float = 50.0,
+    bandwidth: float = 10,
+    f_low: float = 300.0,
+    f_high: float = 6_000.0,
+    noise_threshold: float = 3,
+    vectorized: bool = True,
+    job_kwargs: dict = None,
+):
+
+    preprocessed_recording = di_carlo_preprocessing(
+        recording=recording,
+        f_notch=f_notch,
+        bandwidth=bandwidth,
+        f_low=f_low,
+        f_high=f_high,
+        vectorized=vectorized,
+    )
+    spike_times_per_channel = di_carlo_peak_detection(
+        recording=preprocessed_recording,
+        noise_threshold=noise_threshold,
+        vectorized=vectorized,
+        job_kwargs=job_kwargs,
+    )
+
+    return spike_times_per_channel
+
+
+if __name__ == "__main__":
+    from spikeinterface.core.generate import generate_ground_truth_recording
+    from spikeinterface.core.job_tools import ChunkRecordingExecutor
+
+    from dicarlo_lab_to_nwb.conversion.pipeline import di_carlo_pipeline
+
+    recording, sorting = generate_ground_truth_recording(num_channels=4, num_units=1, durations=[1], seed=0)
+
+    f_notch = 50
+    bandwidth = 10
+    f_low = 300.0
+    f_high = 6000.0
+    noise_threshold = 3
+
+    spikes_per_channel = di_carlo_pipeline(
+        recording=recording,
+        f_notch=f_notch,
+        bandwidth=bandwidth,
+        f_low=f_low,
+        f_high=f_high,
+        noise_threshold=noise_threshold,
+    )
