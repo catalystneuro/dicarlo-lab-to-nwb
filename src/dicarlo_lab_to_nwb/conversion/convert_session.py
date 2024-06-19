@@ -15,8 +15,8 @@ def session_to_nwb(
     subject: str,
     session_date: str,
     session_time: str,
-    intan_session_folder: str | Path,
-    mworks_processed_folder: str | Path,
+    intan_file_path: str | Path,
+    mworks_processed_file_path: str | Path,
     stimuli_folder: str | Path,
     output_dir_path: str | Path,
     stub_test: bool = False,
@@ -24,8 +24,8 @@ def session_to_nwb(
 
     start = time.time()
 
-    intan_session_folder = Path(intan_session_folder)
-    mworks_processed_folder = Path(mworks_processed_folder)
+    intan_file_path = Path(intan_file_path)
+    mworks_processed_file_path = Path(mworks_processed_file_path)
     stimuli_folder = Path(stimuli_folder)
 
     output_dir_path = Path(output_dir_path)
@@ -40,25 +40,20 @@ def session_to_nwb(
     conversion_options = dict()
 
     # Add Recording
-    intan_file_path = intan_session_folder / "info.rhd"
-    assert intan_file_path.is_file(), f"Intan raw file not found: {intan_file_path}"
-    source_data.update(dict(Recording=dict(file_path=intan_file_path, ignore_integrity_checks=True)))
-    conversion_options.update(dict(Recording=dict(stub_test=stub_test)))
+    source_data["Recording"] = dict(file_path=intan_file_path, ignore_integrity_checks=True)
+    conversion_options["Recording"] = dict(
+        stub_test=stub_test,
+        iterator_opts={"display_progress": True, "buffer_gb": 5},
+    )
 
     # Add behavior
-    session_id = f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
-    mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
-
-    assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
-    source_data.update(dict(Behavior=dict(file_path=mworks_processed_file_path)))
+    source_data["Behavior"] = dict(file_path=mworks_processed_file_path)
 
     # Add stimuli
-    source_data.update(
-        dict(
-            Stimuli=dict(
-                file_path=mworks_processed_file_path, folder_path=stimuli_folder, image_set_name=image_set_name
-            )
-        )
+    source_data["Stimuli"] = dict(
+        file_path=mworks_processed_file_path,
+        folder_path=stimuli_folder,
+        image_set_name=image_set_name,
     )
 
     converter = ConversionNWBConverter(source_data=source_data)
@@ -90,6 +85,7 @@ def session_to_nwb(
 
     stop_time = time.time()
     print(f"Conversion took {stop_time - start:.2f} seconds")
+    print(f"Conversion took {(stop_time - start) / 60:.2f} minutes")
 
 
 if __name__ == "__main__":
@@ -100,8 +96,8 @@ if __name__ == "__main__":
     session_time = "161322"
 
     # This one has a jump in time
-    session_date = "20230214"
-    session_time = "140610"
+    # session_date = "20230214"
+    # session_time = "140610"
 
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
@@ -120,8 +116,15 @@ if __name__ == "__main__":
     )
     assert intan_session_folder.is_dir(), f"Intan session folder not found: {intan_session_folder}"
 
+    intan_file_path = intan_session_folder / "info.rhd"
+    assert intan_file_path.is_file(), f"Intan raw file not found: {intan_file_path}"
+
     mworks_processed_folder = raw_data_folder / "mworksproc"
     assert mworks_processed_folder.is_dir(), f"mworksproc folder not found: {mworks_processed_folder}"
+
+    session_id = f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
+    mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
+    assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
 
     stimuli_folder = data_folder / "StimulusSets"
     assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
@@ -134,8 +137,8 @@ if __name__ == "__main__":
         subject=subject,
         session_date=session_date,
         session_time=session_time,
-        intan_session_folder=intan_session_folder,
-        mworks_processed_folder=mworks_processed_folder,
+        intan_file_path=intan_file_path,
+        mworks_processed_file_path=mworks_processed_file_path,
         stimuli_folder=stimuli_folder,
         output_dir_path=output_dir_path,
         stub_test=stub_test,

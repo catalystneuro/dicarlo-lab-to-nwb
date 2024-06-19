@@ -180,6 +180,12 @@ Intan has a delay buffer, triggers one second before, then I Guess the [DIGITAL-
 ## Probe information
 For this instance each array 96 channels, 400 micrometes apart
 
+This is the pedestal that they use
+
+UTAH ARRAY PEDESTAL CONNECTOR
+
+
+
 
 
 ## Spike thresholding / Peak detection pipeline

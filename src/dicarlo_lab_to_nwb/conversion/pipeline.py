@@ -286,7 +286,7 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     return all_peak_times
 
 
-def di_carlo_preprocessing(
+def thresholding_preprocessing(
     recording: BaseRecording,
     f_notch: float = 50.0,
     bandwidth: float = 10,
@@ -301,7 +301,7 @@ def di_carlo_preprocessing(
     return preprocessed_recording
 
 
-def di_carlo_peak_detection(
+def thresholding_peak_detection(
     recording: BaseRecording,
     noise_threshold: float = 3,
     vectorized: bool = True,
@@ -310,7 +310,8 @@ def di_carlo_peak_detection(
     job_name = "DiCarloPeakDetectionPipeline"
 
     if job_kwargs is None:
-        job_kwargs = dict(n_jobs=1, verbose=True, progress_bar=True, chunk_duration=1.0)
+        chunk_size = math.ceil(recording.get_num_samples() / 10)
+        job_kwargs = dict(n_jobs=1, verbose=True, progress_bar=True, chunk_size=chunk_size)
     init_args = (recording, noise_threshold)
     processor = ChunkRecordingExecutor(
         recording,
@@ -335,7 +336,7 @@ def di_carlo_peak_detection(
     return spike_times_per_channel
 
 
-def di_carlo_pipeline(
+def thresholding_pipeline(
     recording: BaseRecording,
     f_notch: float = 50.0,
     bandwidth: float = 10,
@@ -346,7 +347,7 @@ def di_carlo_pipeline(
     job_kwargs: dict = None,
 ):
 
-    preprocessed_recording = di_carlo_preprocessing(
+    preprocessed_recording = thresholding_preprocessing(
         recording=recording,
         f_notch=f_notch,
         bandwidth=bandwidth,
@@ -354,7 +355,7 @@ def di_carlo_pipeline(
         f_high=f_high,
         vectorized=vectorized,
     )
-    spike_times_per_channel = di_carlo_peak_detection(
+    spike_times_per_channel = thresholding_peak_detection(
         recording=preprocessed_recording,
         noise_threshold=noise_threshold,
         vectorized=vectorized,
