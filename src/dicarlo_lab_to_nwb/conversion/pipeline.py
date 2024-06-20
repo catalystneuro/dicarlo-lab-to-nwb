@@ -201,7 +201,9 @@ class DiCarloNotchSegment(BasePreprocessorSegment):
         self.vectorized = vectorized
 
     def get_traces(self, start_frame, end_frame, channel_indices):
-        traces = self.parent_segment.get_traces(start_frame, end_frame, channel_indices)
+
+        traces = self.parent_segment.get_traces(start_frame, end_frame, channel_indices).astype(np.float64)
+        traces *= 0.195  # Convert to microvolts
 
         if self.vectorized:
             return notch_filter_vectorized(traces, self.f_sampling, self.f_notch, self.bandwidth)
