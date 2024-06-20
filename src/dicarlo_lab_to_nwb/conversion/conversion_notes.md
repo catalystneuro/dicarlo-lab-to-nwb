@@ -184,7 +184,7 @@ This is the pedestal that they use
 
 UTAH ARRAY PEDESTAL CONNECTOR
 
-
+https://rippleneuro.com/ripple-products/adapters/
 
 
 

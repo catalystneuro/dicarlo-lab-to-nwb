@@ -138,12 +138,12 @@ def notch_filter(signal, f_sampling, f_notch, bandwidth):
 
 
 def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
-
     tstep = 1.0 / f_sampling
     Fc = f_notch * tstep
     d = np.exp(-2.0 * np.pi * (bandwidth / 2.0) * tstep)
-    b = (1.0 + d * d) * np.cos(2.0 * np.pi * Fc)
 
+    # Coefficients (same as before)
+    b = (1.0 + d * d) * np.cos(2.0 * np.pi * Fc)
     a0 = 1.0
     a1 = -b
     a2 = d * d
@@ -152,21 +152,25 @@ def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
     b1 = -2.0 * np.cos(2.0 * np.pi * Fc)
     b2 = 1.0
 
-    out = np.zeros_like(signal)
-    out[:, 0] = signal[:, 0]
-    if signal.shape[1] > 1:
-        out[:, 1] = signal[:, 1]
+    # Store the first two samples (needed for filtering)
+    first_sample = signal[0, :].copy()
+    second_sample = signal[1, :].copy()
 
+    # In-place filtering loop
     for n in range(2, signal.shape[0]):
-        out[n, :] = (
+        signal[n, :] = (
             a * b2 * signal[n - 2, :]
             + a * b1 * signal[n - 1, :]
             + a * b0 * signal[n, :]
-            - a2 * out[n - 2, :]
-            - a1 * out[n - 1, :]
+            - a2 * second_sample
+            - a1 * first_sample
         ) / a0
 
-    return out
+        # Update the stored samples
+        first_sample = second_sample
+        second_sample = signal[n, :]
+
+    return signal
 
 
 class DiCarloNotch(BasePreprocessor):
