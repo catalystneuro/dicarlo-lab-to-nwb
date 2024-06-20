@@ -298,9 +298,12 @@ def thresholding_preprocessing(
     f_high: float = 6_000.0,
     vectorized: bool = True,
 ) -> BasePreprocessor:
-
-    gain = recording.get_channel_gains()
-    offset = recording.get_channel_offsets()
+    if recording.has_scaleable_traces():
+        gain = recording.get_channel_gains()
+        offset = recording.get_channel_offsets()
+    else:
+        gain = np.ones(recording.get_num_channels(), dtype="float32")
+        offset = np.zeros(recording.get_num_channels(), dtype="float32")
     scaled_to_uV_recording = ScaleRecording(recording=recording, gain=gain, offset=offset)
     notched_recording = DiCarloNotch(
         scaled_to_uV_recording, f_notch=f_notch, bandwidth=bandwidth, vectorized=vectorized
