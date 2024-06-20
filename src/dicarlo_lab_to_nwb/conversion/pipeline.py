@@ -47,7 +47,7 @@ def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
 
 class DiCarloBandPass(BasePreprocessor):
 
-    def __init__(self, recording, f_low, f_high, vectorized=False):
+    def __init__(self, recording: BaseRecording, f_low: float, f_high: float, vectorized: bool = False):
         BasePreprocessor.__init__(self, recording)
         self.f_low = f_low
         self.f_high = f_high
@@ -61,6 +61,7 @@ class DiCarloBandPass(BasePreprocessor):
             self.add_recording_segment(segment)
 
         self._kwargs = {
+            "recording": recording,
             "f_low": f_low,
             "f_high": f_high,
             "vectorized": vectorized,
@@ -169,7 +170,7 @@ def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
 
 
 class DiCarloNotch(BasePreprocessor):
-    def __init__(self, recording, f_notch, bandwidth, vectorized=False):
+    def __init__(self, recording: BaseRecording, f_notch: float, bandwidth: float, vectorized: bool = False):
         super().__init__(recording)
         self.f_notch = f_notch
         self.bandwidth = bandwidth
@@ -186,6 +187,7 @@ class DiCarloNotch(BasePreprocessor):
             self.add_recording_segment(segment)
 
         self._kwargs = {
+            "recording": recording,
             "f_notch": f_notch,
             "bandwidth": bandwidth,
             "vectorized": vectorized,
@@ -262,7 +264,7 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     centered_traces = traces - np.nanmean(traces, axis=0)
 
     # Estimating standard deviation with the MAD
-    std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6744
+    std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6745
 
     # Calculating the noise level threshold for each channel
     noise_level = -noise_threshold * std_estimate
@@ -303,7 +305,9 @@ def thresholding_preprocessing(
     notched_recording = DiCarloNotch(
         scaled_to_uV_recording, f_notch=f_notch, bandwidth=bandwidth, vectorized=vectorized
     )
-    preprocessed_recording = DiCarloBandPass(notched_recording, f_low=f_low, f_high=f_high, vectorized=vectorized)
+    preprocessed_recording = DiCarloBandPass(
+        recording=notched_recording, f_low=f_low, f_high=f_high, vectorized=vectorized
+    )
 
     return preprocessed_recording
 

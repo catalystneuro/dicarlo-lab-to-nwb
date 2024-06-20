@@ -16,11 +16,13 @@ classifiers = [
 
 
 dependencies = [
-  "neuroconv",
+  "neuroconv @ git+https://github.com/CatalystNeuro/neuroconv@main",
   "spikeinterface @ git+https://github.com/spikeinterface/spikeinterface@main",
+  "neo @ git+https://github.com/NeuralEnsemble/python-neo@master",
   "scipy",
   "neo>=0.13.1",
   "matplotlib",
+  "psutil",
 ]
 
 [project.urls]
