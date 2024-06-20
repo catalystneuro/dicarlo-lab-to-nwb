@@ -3,6 +3,7 @@ import math
 import numpy as np
 from scipy.signal import ellip, filtfilt
 from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
+from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
     BasePreprocessor,
     BasePreprocessorSegment,
@@ -203,7 +204,6 @@ class DiCarloNotchSegment(BasePreprocessorSegment):
     def get_traces(self, start_frame, end_frame, channel_indices):
 
         traces = self.parent_segment.get_traces(start_frame, end_frame, channel_indices).astype(np.float64)
-        traces *= 0.195  # Convert to microvolts
 
         if self.vectorized:
             return notch_filter_vectorized(traces, self.f_sampling, self.f_notch, self.bandwidth)
@@ -235,7 +235,7 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
         channel_traces = traces[:, channel_index]
         centered_channel_traces = channel_traces - np.nanmean(channel_traces)
 
-        std_estimate = np.median(np.abs(centered_channel_traces)) / 0.6744
+        std_estimate = np.median(np.abs(centered_channel_traces)) / 0.6745
         noise_level = -noise_threshold * std_estimate
 
         # Core of method
@@ -297,7 +297,12 @@ def thresholding_preprocessing(
     vectorized: bool = True,
 ) -> BasePreprocessor:
 
-    notched_recording = DiCarloNotch(recording, f_notch=f_notch, bandwidth=bandwidth, vectorized=vectorized)
+    gain = recording.get_channel_gains()
+    offset = recording.get_channel_offsets()
+    scaled_to_uV_recording = ScaleRecording(recording=recording, gain=gain, offset=offset)
+    notched_recording = DiCarloNotch(
+        scaled_to_uV_recording, f_notch=f_notch, bandwidth=bandwidth, vectorized=vectorized
+    )
     preprocessed_recording = DiCarloBandPass(notched_recording, f_low=f_low, f_high=f_high, vectorized=vectorized)
 
     return preprocessed_recording
