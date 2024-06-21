@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from scipy.signal import ellip, filtfilt
+from scipy.signal import ellip, filtfilt, lfilter, lfiltic
 from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
@@ -101,12 +101,9 @@ def notch_filter(signal, f_sampling, f_notch, bandwidth):
     and you wish to implement a 60 Hz notch filter:
 
     """
-    out = np.zeros_like(signal)
 
     tstep = 1.0 / f_sampling
     Fc = f_notch * tstep
-
-    L = len(signal)
 
     # Calculate IIR filter parameters
     d = math.exp(-2.0 * math.pi * (bandwidth / 2.0) * tstep)
@@ -119,31 +116,33 @@ def notch_filter(signal, f_sampling, f_notch, bandwidth):
     b1 = -2.0 * math.cos(2.0 * math.pi * Fc)
     b2 = 1.0
 
-    out = np.zeros_like(signal)
-    out[:, 0] = signal[:, 0]
+    filtered_signal = np.zeros_like(signal)
+    filtered_signal[0, :] = signal[0, :]
     if signal.shape[1] > 1:
-        out[:, 1] = signal[:, 1]
+        filtered_signal[1, :] = signal[1, :]
 
-    for channel_index in range(signal.shape[1]):
-        for sample_index in range(2, L):
-            out[sample_index, channel_index] = (
+    num_samples = signal.shape[0]
+    num_channels = signal.shape[1]
+    for channel_index in range(num_channels):
+        for sample_index in range(2, num_samples):
+            filtered_signal[sample_index, channel_index] = (
                 a * b2 * signal[sample_index - 2, channel_index]
                 + a * b1 * signal[sample_index - 1, channel_index]
                 + a * b0 * signal[sample_index, channel_index]
-                - a2 * out[sample_index - 2, channel_index]
-                - a1 * out[sample_index - 1, channel_index]
+                - a2 * filtered_signal[sample_index - 2, channel_index]
+                - a1 * filtered_signal[sample_index - 1, channel_index]
             ) / a0
 
-    return out
+    return filtered_signal
 
 
 def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
+
     tstep = 1.0 / f_sampling
     Fc = f_notch * tstep
     d = np.exp(-2.0 * np.pi * (bandwidth / 2.0) * tstep)
-
-    # Coefficients (same as before)
     b = (1.0 + d * d) * np.cos(2.0 * np.pi * Fc)
+
     a0 = 1.0
     a1 = -b
     a2 = d * d
@@ -152,25 +151,47 @@ def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
     b1 = -2.0 * np.cos(2.0 * np.pi * Fc)
     b2 = 1.0
 
-    # Store the first two samples (needed for filtering)
-    first_sample = signal[0, :].copy()
-    second_sample = signal[1, :].copy()
+    filtered_signal = np.zeros_like(signal)
+    filtered_signal[0, :] = signal[0, :]
+    if signal.shape[1] > 1:
+        filtered_signal[0, :] = signal[0, :]
 
-    # In-place filtering loop
-    for n in range(2, signal.shape[0]):
-        signal[n, :] = (
-            a * b2 * signal[n - 2, :]
-            + a * b1 * signal[n - 1, :]
-            + a * b0 * signal[n, :]
-            - a2 * second_sample
-            - a1 * first_sample
+    num_samples = signal.shape[0]
+    for sample_index in range(2, num_samples):
+        filtered_signal[sample_index, :] = (
+            a * b2 * signal[sample_index - 2, :]
+            + a * b1 * signal[sample_index - 1, :]
+            + a * b0 * signal[sample_index, :]
+            - a2 * filtered_signal[sample_index - 2, :]
+            - a1 * filtered_signal[sample_index - 1, :]
         ) / a0
 
-        # Update the stored samples
-        first_sample = second_sample
-        second_sample = signal[n, :]
+    return filtered_signal
 
-    return signal
+
+def notch_filter_vectorized_scipy(signal, f_sampling, f_notch, bandwidth):
+    tstep = 1.0 / f_sampling
+    Fc = f_notch * tstep
+
+    # Calculate IIR filter parameters (same as original)
+    d = math.exp(-2.0 * math.pi * (bandwidth / 2.0) * tstep)
+    b = (1.0 + d * d) * math.cos(2.0 * math.pi * Fc)
+    a0 = 1.0
+    a1 = -b
+    a2 = d * d
+    a = (1.0 + d * d) / 2.0
+    b0 = 1.0
+    b1 = -2.0 * math.cos(2.0 * math.pi * Fc)
+    b2 = 1.0
+
+    # Prepare filter coefficients for lfilter
+    b_coeffs = np.array([b0, b1, b2]) * a  # Combine 'a' with 'b' coefficients
+    a_coeffs = np.array([a0, a1, a2])
+
+    # Apply the filter using lfilter
+    filtered_signal_vector = lfilter(b_coeffs, a_coeffs, signal, axis=0)
+
+    return filtered_signal_vector
 
 
 class DiCarloNotch(BasePreprocessor):
