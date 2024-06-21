@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from scipy.signal import ellip, filtfilt, lfilter, lfiltic
+from scipy.signal import ellip, filtfilt, lfilter, lfilter_zi, lfiltic
 from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
@@ -117,12 +117,11 @@ def notch_filter(signal, f_sampling, f_notch, bandwidth):
     b2 = 1.0
 
     filtered_signal = np.zeros_like(signal)
-    filtered_signal[0, :] = signal[0, :]
-    if signal.shape[1] > 1:
-        filtered_signal[1, :] = signal[1, :]
+    filtered_signal[0:2, :] = signal[0:2, :]
 
     num_samples = signal.shape[0]
     num_channels = signal.shape[1]
+
     for channel_index in range(num_channels):
         for sample_index in range(2, num_samples):
             filtered_signal[sample_index, channel_index] = (
@@ -152,18 +151,16 @@ def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
     b2 = 1.0
 
     filtered_signal = np.zeros_like(signal)
-    filtered_signal[0, :] = signal[0, :]
-    if signal.shape[1] > 1:
-        filtered_signal[0, :] = signal[0, :]
+    filtered_signal[0:2, :] = signal[0:2, :]
 
     num_samples = signal.shape[0]
-    for sample_index in range(2, num_samples):
-        filtered_signal[sample_index, :] = (
-            a * b2 * signal[sample_index - 2, :]
-            + a * b1 * signal[sample_index - 1, :]
-            + a * b0 * signal[sample_index, :]
-            - a2 * filtered_signal[sample_index - 2, :]
-            - a1 * filtered_signal[sample_index - 1, :]
+    for n in range(2, num_samples):
+        filtered_signal[n, :] = (
+            a * b2 * signal[n - 2, :]
+            + a * b1 * signal[n - 1, :]
+            + a * b0 * signal[n, :]
+            - a2 * filtered_signal[n - 2, :]
+            - a1 * filtered_signal[n - 1, :]
         ) / a0
 
     return filtered_signal
@@ -188,8 +185,14 @@ def notch_filter_vectorized_scipy(signal, f_sampling, f_notch, bandwidth):
     b_coeffs = np.array([b0, b1, b2]) * a  # Combine 'a' with 'b' coefficients
     a_coeffs = np.array([a0, a1, a2])
 
-    # Apply the filter using lfilter
-    filtered_signal_vector = lfilter(b_coeffs, a_coeffs, signal, axis=0)
+    # Compute initial conditions for the filter
+    zi = lfilter_zi(b_coeffs, a_coeffs)
+
+    # Adjust the initial conditions to match the first two samples of the signal
+    zi = zi * signal[0]
+
+    # Apply the filter using lfilter with initial conditions
+    filtered_signal_vector, _ = lfilter(b_coeffs, a_coeffs, signal, axis=0, zi=zi)
 
     return filtered_signal_vector
 
@@ -303,44 +306,6 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     # Manually calculate differences and handle the initial state
     cross[1:] = outside[1:] & ~outside[:-1]
     cross[0] = outside[0]
-
-    # Find indices where crossings occur
-    peaks_idx = np.nonzero(cross)
-    peak_times_channels = times_in_chunk[peaks_idx[0]]
-
-    # Reshape the results into a list of arrays, one for each channel
-    channel_indices = peaks_idx[1]
-    all_peak_times = [peak_times_channels[channel_indices == i] for i in range(traces.shape[1])]
-
-    return all_peak_times
-
-
-def calculate_peak_in_chunks_vectorized_(segment_index, start_frame, end_frame, worker_ctx):
-    recording = worker_ctx["recording"]
-    noise_threshold = worker_ctx["noise_threshold"]
-
-    traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame)
-    sampling_frequency = recording.get_sampling_frequency()
-    times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
-
-    # Centering the traces
-    centered_traces = traces - np.nanmean(traces, axis=0)
-
-    # Estimating standard deviation with the MAD
-    std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6745
-
-    # Calculating the noise level threshold for each channel
-    noise_level = -noise_threshold * std_estimate
-
-    # Detecting crossings below the noise level for each channel
-    outside = centered_traces < noise_level[np.newaxis, :]
-
-    # Creating a cross_diff array with prepend to ensure we capture the initial crossing
-    cross_diff = np.diff(outside.astype(int), axis=0, prepend=outside[0:1, :])
-    cross = cross_diff > 0
-
-    # Checking the first point separately
-    cross[0, :] = outside[0, :]
 
     # Find indices where crossings occur
     peaks_idx = np.nonzero(cross)
