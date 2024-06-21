@@ -22,10 +22,11 @@ def bandpass_filter(signal, f_sampling, f_low, f_high):
     # To match Matlab output, we change default padlen from
     # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
     padlen = 3 * (max(len(a), len(b)) - 1)
-    output = np.zeros_like(signal, dtype=np.float64)
-    for channel_index in range(signal.shape[1]):
-        output[:, channel_index] = filtfilt(b, a, signal[:, channel_index], axis=0, padlen=padlen)
-    return output
+    filtered_signal = np.zeros_like(signal, dtype=np.float64)
+    num_channels = signal.shape[1]
+    for channel_index in range(num_channels):
+        filtered_signal[:, channel_index] = filtfilt(b, a, signal[:, channel_index], axis=0, padlen=padlen)
+    return filtered_signal
 
 
 def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
@@ -42,7 +43,8 @@ def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
     # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
     padlen = 3 * (max(len(a), len(b)) - 1)
 
-    return filtfilt(b, a, signal, axis=0, padlen=padlen)
+    signal = filtfilt(b, a, signal, axis=0, padlen=padlen)
+    return signal
 
 
 class DiCarloBandPass(BasePreprocessor):
@@ -150,51 +152,20 @@ def notch_filter_vectorized(signal, f_sampling, f_notch, bandwidth):
     b1 = -2.0 * np.cos(2.0 * np.pi * Fc)
     b2 = 1.0
 
-    filtered_signal = np.zeros_like(signal)
+    filtered_signal = np.zeros_like(signal, dtype=np.float64)
     filtered_signal[0:2, :] = signal[0:2, :]
 
     num_samples = signal.shape[0]
-    for n in range(2, num_samples):
-        filtered_signal[n, :] = (
-            a * b2 * signal[n - 2, :]
-            + a * b1 * signal[n - 1, :]
-            + a * b0 * signal[n, :]
-            - a2 * filtered_signal[n - 2, :]
-            - a1 * filtered_signal[n - 1, :]
+    for sample_index in range(2, num_samples):
+        filtered_signal[sample_index, :] = (
+            a * b2 * signal[sample_index - 2, :]
+            + a * b1 * signal[sample_index - 1, :]
+            + a * b0 * signal[sample_index, :]
+            - a2 * filtered_signal[sample_index - 2, :]
+            - a1 * filtered_signal[sample_index - 1, :]
         ) / a0
 
     return filtered_signal
-
-
-def notch_filter_vectorized_scipy(signal, f_sampling, f_notch, bandwidth):
-    tstep = 1.0 / f_sampling
-    Fc = f_notch * tstep
-
-    # Calculate IIR filter parameters (same as original)
-    d = math.exp(-2.0 * math.pi * (bandwidth / 2.0) * tstep)
-    b = (1.0 + d * d) * math.cos(2.0 * math.pi * Fc)
-    a0 = 1.0
-    a1 = -b
-    a2 = d * d
-    a = (1.0 + d * d) / 2.0
-    b0 = 1.0
-    b1 = -2.0 * math.cos(2.0 * math.pi * Fc)
-    b2 = 1.0
-
-    # Prepare filter coefficients for lfilter
-    b_coeffs = np.array([b0, b1, b2]) * a  # Combine 'a' with 'b' coefficients
-    a_coeffs = np.array([a0, a1, a2])
-
-    # Compute initial conditions for the filter
-    zi = lfilter_zi(b_coeffs, a_coeffs)
-
-    # Adjust the initial conditions to match the first two samples of the signal
-    zi = zi * signal[0]
-
-    # Apply the filter using lfilter with initial conditions
-    filtered_signal_vector, _ = lfilter(b_coeffs, a_coeffs, signal, axis=0, zi=zi)
-
-    return filtered_signal_vector
 
 
 class DiCarloNotch(BasePreprocessor):
