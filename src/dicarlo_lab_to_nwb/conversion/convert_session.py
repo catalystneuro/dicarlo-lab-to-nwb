@@ -8,6 +8,10 @@ from zoneinfo import ZoneInfo
 from neuroconv.utils import dict_deep_update, load_dict_from_file
 
 from dicarlo_lab_to_nwb.conversion import ConversionNWBConverter
+from dicarlo_lab_to_nwb.conversion.data_locator import (
+    locate_intan_file_path,
+    locate_mworks_processed_file_path,
+)
 
 
 def session_to_nwb(
@@ -84,8 +88,13 @@ def session_to_nwb(
     )
 
     stop_time = time.time()
-    print(f"Conversion took {stop_time - start:.2f} seconds")
-    print(f"Conversion took {(stop_time - start) / 60:.2f} minutes")
+    conversion_time_seconds = stop_time - start
+    if conversion_time_seconds <= 60 * 3:
+        print(f"Conversion took {conversion_time_seconds:.2f} seconds")
+    elif conversion_time_seconds <= 60 * 60:
+        print(f"Conversion took {conversion_time_seconds / 60:.2f} minutes")
+    else:
+        print(f"Conversion took {conversion_time_seconds / 60 / 60:.2f} hours")
 
 
 if __name__ == "__main__":
@@ -102,32 +111,23 @@ if __name__ == "__main__":
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
 
-    experiment_folder = data_folder / f"exp_{image_set_name}"
-    assert experiment_folder.is_dir(), f"Experiment folder not found: {experiment_folder}"
-
-    subject_folder = experiment_folder / f"exp_{image_set_name}.sub_{subject}"
-    assert subject_folder.is_dir(), f"Subject folder not found: {subject_folder}"
-
-    raw_data_folder = subject_folder / "raw_files"
-    assert raw_data_folder.is_dir(), f"Raw files folder not found: {raw_data_folder}"
-
-    intan_session_folder = (
-        raw_data_folder / "intanraw" / f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
-    )
-    assert intan_session_folder.is_dir(), f"Intan session folder not found: {intan_session_folder}"
-
-    intan_file_path = intan_session_folder / "info.rhd"
-    assert intan_file_path.is_file(), f"Intan raw file not found: {intan_file_path}"
-
-    mworks_processed_folder = raw_data_folder / "mworksproc"
-    assert mworks_processed_folder.is_dir(), f"mworksproc folder not found: {mworks_processed_folder}"
-
-    session_id = f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
-    mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
-    assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
-
     stimuli_folder = data_folder / "StimulusSets"
     assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
+
+    intan_file_path = locate_intan_file_path(
+        data_folder=data_folder,
+        image_set_name=image_set_name,
+        subject=subject,
+        session_date=session_date,
+        session_time=session_time,
+    )
+    mworks_processed_file_path = locate_mworks_processed_file_path(
+        data_folder=data_folder,
+        image_set_name=image_set_name,
+        subject=subject,
+        session_date=session_date,
+        session_time=session_time,
+    )
 
     output_dir_path = Path.home() / "conversion_nwb"
     stub_test = True
