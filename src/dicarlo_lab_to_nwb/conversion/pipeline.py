@@ -30,20 +30,30 @@ def bandpass_filter(signal, f_sampling, f_low, f_high):
 
 
 def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
-
     wl = f_low / (f_sampling / 2.0)
     wh = f_high / (f_sampling / 2.0)
     wn = [wl, wh]
 
-    # Designs a 2nd-order Elliptic band-pass filter which passes
-    # frequencies between normalized f_low and f_high, and with 0.1 dB of ripple
-    # in the passband, and 40 dB of attenuation in the stopband.
+    # Design a 2nd-order Elliptic band-pass filter
     b, a = ellip(2, 0.1, 40, wn, "bandpass", analog=False)
-    # To match Matlab output, we change default padlen from
-    # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
+    # Change default padlen to match Matlab output
     padlen = 3 * (max(len(a), len(b)) - 1)
+    signal_size_GiB = signal.nbytes / 1024**3
+    limit_chunk_size_GiB = 1
 
-    signal = filtfilt(b, a, signal, axis=0, padlen=padlen)
+    if signal_size_GiB > limit_chunk_size_GiB:
+        num_channels = signal.shape[1]
+        channel_chunk_size = int(limit_chunk_size_GiB * 1024**3 / (signal.nbytes / num_channels))
+
+        num_chunks = int(np.ceil(num_channels / channel_chunk_size))
+
+        for i in range(num_chunks):
+            start_idx = i * channel_chunk_size
+            end_idx = min((i + 1) * channel_chunk_size, num_channels)
+            signal[:, start_idx:end_idx] = filtfilt(b, a, signal[:, start_idx:end_idx], axis=0, padlen=padlen)
+    else:
+        signal = filtfilt(b, a, signal, axis=0, padlen=padlen)
+
     return signal
 
 
@@ -226,7 +236,7 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
     recording = worker_ctx["recording"]
     noise_threshold = worker_ctx["noise_threshold"]
 
-    traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame)
+    traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame).astype("float32")
     number_of_channels = recording.get_num_channels()
     sampling_frequency = recording.get_sampling_frequency()
     times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
@@ -263,7 +273,8 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     traces -= np.nanmean(traces, axis=0, keepdims=True)
 
     # Estimating standard deviation with the MAD
-    std_estimate = np.median(np.abs(traces), axis=0) / 0.6745
+    absolute_traces = np.abs(traces, out=traces)
+    std_estimate = np.median(absolute_traces, axis=0) / 0.6745
 
     # Calculating the noise level threshold for each channel
     noise_level = -noise_threshold * std_estimate
@@ -284,7 +295,8 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
 
     # Reshape the results into a list of arrays, one for each channel
     channel_indices = peaks_idx[1]
-    all_peak_times = [peak_times_channels[channel_indices == i] for i in range(traces.shape[1])]
+    num_channels = traces.shape[1]
+    all_peak_times = [peak_times_channels[channel_indices == channel_index] for channel_index in range(num_channels)]
 
     return all_peak_times
 
