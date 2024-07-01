@@ -132,3 +132,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+src/dicarlo_lab_to_nwb/conversion/assets/utah_array_factsheet.pdf

@@ -111,9 +111,6 @@ if __name__ == "__main__":
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
 
-    stimuli_folder = data_folder / "StimulusSets"
-    assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
-
     intan_file_path = locate_intan_file_path(
         data_folder=data_folder,
         image_set_name=image_set_name,
@@ -128,6 +125,9 @@ if __name__ == "__main__":
         session_date=session_date,
         session_time=session_time,
     )
+
+    stimuli_folder = data_folder / "StimulusSets"
+    assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
     stub_test = True
