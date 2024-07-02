@@ -5,13 +5,17 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from neuroconv import ConverterPipe
+from neuroconv.datainterfaces import IntanRecordingInterface
 from neuroconv.utils import dict_deep_update, load_dict_from_file
 
-from dicarlo_lab_to_nwb.conversion import ConversionNWBConverter
+from dicarlo_lab_to_nwb.conversion.behaviorinterface import BehavioralTrialsInterface
 from dicarlo_lab_to_nwb.conversion.data_locator import (
     locate_intan_file_path,
     locate_mworks_processed_file_path,
 )
+from dicarlo_lab_to_nwb.conversion.probe import attach_probe_to_recording
+from dicarlo_lab_to_nwb.conversion.stimuli_interface import StimuliImagesInterface
 
 
 def session_to_nwb(
@@ -24,6 +28,7 @@ def session_to_nwb(
     stimuli_folder: str | Path,
     output_dir_path: str | Path,
     stub_test: bool = False,
+    verbose: bool = False,
 ):
 
     start = time.time()
@@ -40,27 +45,34 @@ def session_to_nwb(
     session_id = f"{subject}_{session_date}_{session_time}"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
-    source_data = dict()
     conversion_options = dict()
 
-    # Add Recording
-    source_data["Recording"] = dict(file_path=intan_file_path, ignore_integrity_checks=True)
+    # Add Intan Interface
+    intan_recording_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
+    attach_probe_to_recording(recording=intan_recording_interface.recording_extractor)
+
     conversion_options["Recording"] = dict(
         stub_test=stub_test,
         iterator_opts={"display_progress": True, "buffer_gb": 5},
     )
 
-    # Add behavior
-    source_data["Behavior"] = dict(file_path=mworks_processed_file_path)
+    # Behavioral Trials Interface
+    behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
 
-    # Add stimuli
-    source_data["Stimuli"] = dict(
+    # Add Stimuli Interface
+    stimuli_images_interface = StimuliImagesInterface(
         file_path=mworks_processed_file_path,
         folder_path=stimuli_folder,
         image_set_name=image_set_name,
     )
 
-    converter = ConversionNWBConverter(source_data=source_data)
+    # Build the converter pipe with the previously defined data interfaces
+    data_interfaces_dict = {
+        "Recording": intan_recording_interface,
+        "Behavior": behavioral_trials_interface,
+        "Stimuli": stimuli_images_interface,
+    }
+    converter_pipe = ConverterPipe(data_interfaces=data_interfaces_dict, verbose=verbose)
 
     # Parse the string into a datetime object
     datetime_str = f"{session_date} {session_time}"
@@ -68,7 +80,7 @@ def session_to_nwb(
     session_start_time = datetime.strptime(datetime_str, datetime_format).replace(tzinfo=ZoneInfo("US/Eastern"))
 
     # Add datetime to conversion
-    metadata = converter.get_metadata()
+    metadata = converter_pipe.get_metadata()
     metadata["NWBFile"]["session_start_time"] = session_start_time
 
     # Update default metadata with the editable in the corresponding yaml file
@@ -80,7 +92,7 @@ def session_to_nwb(
     subject_metadata["subject_id"] = f"{subject}"
 
     # Run conversion
-    converter.run_conversion(
+    converter_pipe.run_conversion(
         metadata=metadata,
         nwbfile_path=nwbfile_path,
         conversion_options=conversion_options,
@@ -88,13 +100,14 @@ def session_to_nwb(
     )
 
     stop_time = time.time()
-    conversion_time_seconds = stop_time - start
-    if conversion_time_seconds <= 60 * 3:
-        print(f"Conversion took {conversion_time_seconds:.2f} seconds")
-    elif conversion_time_seconds <= 60 * 60:
-        print(f"Conversion took {conversion_time_seconds / 60:.2f} minutes")
-    else:
-        print(f"Conversion took {conversion_time_seconds / 60 / 60:.2f} hours")
+    if verbose:
+        conversion_time_seconds = stop_time - start
+        if conversion_time_seconds <= 60 * 3:
+            print(f"Conversion took {conversion_time_seconds:.2f} seconds")
+        elif conversion_time_seconds <= 60 * 60:
+            print(f"Conversion took {conversion_time_seconds / 60:.2f} minutes")
+        else:
+            print(f"Conversion took {conversion_time_seconds / 60 / 60:.2f} hours")
 
 
 if __name__ == "__main__":
@@ -131,6 +144,7 @@ if __name__ == "__main__":
 
     output_dir_path = Path.home() / "conversion_nwb"
     stub_test = True
+    verbose = True
 
     session_to_nwb(
         image_set_name=image_set_name,
@@ -142,4 +156,5 @@ if __name__ == "__main__":
         stimuli_folder=stimuli_folder,
         output_dir_path=output_dir_path,
         stub_test=stub_test,
+        verbose=verbose,
     )

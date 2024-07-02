@@ -12,7 +12,7 @@ from pynwb.image import GrayscaleImage, Images, IndexSeries, RGBAImage, RGBImage
 map_image_set_to_folder_name = {"domain-transfer-2023": "RSVP-domain_transfer"}
 
 
-class StimuliInterface(BaseDataInterface):
+class StimuliImagesInterface(BaseDataInterface):
     """Stimuli interface for DiCarlo Lab data."""
 
     keywords = [""]
