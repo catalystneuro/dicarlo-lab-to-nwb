@@ -14,7 +14,7 @@ from dicarlo_lab_to_nwb.conversion.data_locator import (
     locate_intan_file_path,
     locate_mworks_processed_file_path,
 )
-from dicarlo_lab_to_nwb.conversion.probe import build_probe_group
+from dicarlo_lab_to_nwb.conversion.probe import attach_probe_to_recording
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import StimuliImagesInterface
 
 
@@ -47,21 +47,19 @@ def session_to_nwb(
 
     conversion_options = dict()
 
+    # Add Intan Interface
     intan_recording_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
+    attach_probe_to_recording(recording=intan_recording_interface.recording_extractor)
 
-    probe_group = build_probe_group(recording=intan_recording_interface.recording_extractor)
-    intan_recording_interface.recording_extractor.set_probegroup(probe_group, group_mode="by_probe", in_place=True)
-    group_names = intan_recording_interface.recording_extractor.get_property("group").astype(str)
-    intan_recording_interface.recording_extractor.set_property("group_name", group_names)
-
-    # Add Recording
     conversion_options["Recording"] = dict(
         stub_test=stub_test,
         iterator_opts={"display_progress": True, "buffer_gb": 5},
     )
 
+    # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
 
+    # Add Stimuli Interface
     stimuli_images_interface = StimuliImagesInterface(
         file_path=mworks_processed_file_path,
         folder_path=stimuli_folder,

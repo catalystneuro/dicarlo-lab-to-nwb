@@ -6,7 +6,50 @@ from spikeinterface.extractors import IntanRecordingExtractor
 
 
 def add_geometry_to_probe_data_frame(probe_info_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds geometric coordinates to a DataFrame containing probe information.
 
+    The function calculates relative x and y positions for probes based on their column, row, and connector
+    information. The geometric arrangement is determined by the specifications of the Utah array and the
+    configuration used during the surgery.
+
+    Parameters
+    ----------
+    probe_info_df : pd.DataFrame
+        DataFrame containing probe information with columns 'col', 'row', and 'Connector'.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with added 'rel_x' and 'rel_y' columns representing the relative x and y positions of the probes.
+
+    Notes
+    -----
+    - The geometry and the 400 micrometers (um) distance between each probe in a column is based on the Utah array specifications.
+    - The surgery configuration assumed a distance of 2000 um between each probe.
+    - All distance units are in micrometers (um).
+    - The probes are arranged in a pattern such that the first probe connected to probes A, B and C are at the bottom,
+    followed by subsequent probes at calculated y-offsets.
+
+    Example
+    -------
+    >>> data = {
+    >>>     'col': [0, 1, 2, 0, 1, 2, 0, 1],
+    >>>     'row': [0, 0, 0, 1, 1, 1, 2, 2],
+    >>>     'Connector': ['A', 'A', 'A', 'D', 'D', 'D', 'G', 'G']
+    >>> }
+    >>> probe_info_df = pd.DataFrame(data)
+    >>> add_geometry_to_probe_data_frame(probe_info_df)
+       col  row Connector  rel_x   rel_y
+    0    0    0         A    0.0     0.0
+    1    1    0         A  400.0     0.0
+    2    2    0         A  800.0     0.0
+    3    0    1         D    0.0  2400.0
+    4    1    1         D  400.0  2400.0
+    5    2    1         D  800.0  2400.0
+    6    0    2         G    0.0  4800.0
+    7    1    2         G  400.0  4800.0
+    """
     # This is from the datasheet of the Utah array
     distance_um: float = 400.0
 
@@ -43,7 +86,27 @@ def add_intan_wiring_to_probe_data_frame(
     recording: IntanRecordingExtractor,
     probe_info_df: pd.DataFrame,
 ) -> pd.DataFrame:
+    """
+    Adds digital channel indices from an Intan recording to a DataFrame containing probe information.
 
+    This function matches the digital channels listed in the probe information DataFrame with their corresponding
+    channel ids in the Intan recording to find its indices and then adds them to the DataFrame.
+
+    These indices are used to make the mapping between the digital channels in the acquisition system
+    and the electrodes in the probe
+
+    Parameters
+    ----------
+    recording : IntanRecordingExtractor
+        An instance of IntanRecordingExtractor containing the recording data and channel information.
+    probe_info_df : pd.DataFrame
+        DataFrame containing probe information with a column 'Intan' listing the digital channels.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with an added 'digital_channel_index' column representing the index of each digital channel in the recording.
+    """
     digital_channel_in_probe = probe_info_df["Intan"].values.tolist()
     channel_ids = recording.get_channel_ids().tolist()
 
@@ -60,6 +123,30 @@ def add_intan_wiring_to_probe_data_frame(
 def build_probe_group(
     recording: IntanRecordingExtractor,
 ) -> ProbeGroup:
+    """
+    Builds a ProbeGroup object from an Intan recording by processing probe information and geometry.
+
+    These function follows the following workflow:
+    1) Read the probe information from a CSV file.
+    2) Filter the probe information to match the ports available in the recording.
+    3) Add geometric coordinates to the probe information taking into account the geometry of the  Utah array.
+    4) Builds a mapping between the digital channels in the acquisition system and the electrodes in the probe.
+
+    With that information for each probe (which is specified in the )
+
+    This function reads the probe information from a CSV file, filters it to match the ports available in the recording,
+    adds geometric coordinates and digital channel indices, and constructs a ProbeGroup with the processed information.
+
+    Parameters
+    ----------
+    recording : IntanRecordingExtractor
+        An instance of IntanRecordingExtractor containing the recording data and channel information.
+
+    Returns
+    -------
+    ProbeGroup
+        A ProbeGroup object containing the probes with their respective geometric and digital channel information.
+    """
 
     # Get the probe info stored in the repo
     probe_info_path = Path(__file__).parent / "probe_info.csv"
@@ -93,9 +180,35 @@ def build_probe_group(
 
         # We leave a margin of 400 um between probes and the border
         margin_um = 400
-        probe.create_auto_shape(probe_type="rect", margin=margin_um)
+        probe.create_auto_shape(probe_type="circular", margin=margin_um)
         probe.set_device_channel_indices(probe_group_df["digital_channel_index"].values)
 
         probe_group.add_probe(probe)
 
     return probe_group
+
+
+def attach_probe_to_recording(recording: IntanRecordingExtractor):
+    """
+    Builds a ProbeGroup and then attaches to an Intan recording and sets properties for group and probe names.
+
+    This function builds a ProbeGroup from the recording, sets the ProbeGroup in the recording, and assigns
+    group and probe names based on the digital channels and ports in the recording.
+
+    Parameters
+    ----------
+    recording : IntanRecordingExtractor
+        An instance of IntanRecordingExtractor containing the recording data and channel information.
+    """
+
+    probe_group = build_probe_group(recording=recording)
+    recording.set_probegroup(probe_group, group_mode="by_probe", in_place=True)
+
+    group_numbers = recording.get_property("group")
+    number_to_group_name = {0: "ABC", 1: "DEF", 2: "GH"}  # We name the probe groups by the ports in the Intan system
+    group_names = [number_to_group_name[int(group_number)] for group_number in group_numbers]
+    recording.set_property("group_name", group_names)
+
+    number_to_probe_name = {0: "ProbeABC", 1: "ProbeDEF", 2: "ProbeGH"}  #
+    probe_names = [number_to_probe_name[int(group_name)] for group_name in group_numbers]
+    recording.set_property("probe", probe_names)
