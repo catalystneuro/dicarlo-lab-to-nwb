@@ -9,7 +9,7 @@ from neuroconv.utils import DeepDict
 from pynwb.file import NWBFile
 
 
-class ConversionBehaviorInterface(BaseDataInterface):
+class BehavioralTrialsInterface(BaseDataInterface):
     """Behavior interface for conversion conversion"""
 
     keywords = ["behavior"]

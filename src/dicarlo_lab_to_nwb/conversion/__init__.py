@@ -1,2 +1,2 @@
-from .behaviorinterface import ConversionBehaviorInterface
+from .behaviorinterface import BehavioralTrialsInterface
 from .nwbconverter import ConversionNWBConverter

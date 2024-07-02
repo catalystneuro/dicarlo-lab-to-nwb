@@ -3,8 +3,8 @@
 from neuroconv import NWBConverter
 from neuroconv.datainterfaces import IntanRecordingInterface
 
-from .behaviorinterface import ConversionBehaviorInterface
-from .stimuli_interface import StimuliInterface
+from .behaviorinterface import BehavioralTrialsInterface
+from .stimuli_interface import StimuliImagesInterface
 
 
 class ConversionNWBConverter(NWBConverter):
@@ -12,6 +12,6 @@ class ConversionNWBConverter(NWBConverter):
 
     data_interface_classes = dict(
         Recording=IntanRecordingInterface,
-        Behavior=ConversionBehaviorInterface,
-        Stimuli=StimuliInterface,
+        Behavior=BehavioralTrialsInterface,
+        Stimuli=StimuliImagesInterface,
     )
