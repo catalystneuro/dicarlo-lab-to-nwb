@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from scipy.signal import ellip, filtfilt, lfilter, lfilter_zi, lfiltic
+from scipy.signal import ellip, filtfilt
 from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
@@ -30,31 +30,20 @@ def bandpass_filter(signal, f_sampling, f_low, f_high):
 
 
 def bandpass_filter_vectorized(signal, f_sampling, f_low, f_high):
+
     wl = f_low / (f_sampling / 2.0)
     wh = f_high / (f_sampling / 2.0)
     wn = [wl, wh]
 
-    # Design a 2nd-order Elliptic band-pass filter
+    # Designs a 2nd-order Elliptic band-pass filter which passes
+    # frequencies between normalized f_low and f_high, and with 0.1 dB of ripple
+    # in the passband, and 40 dB of attenuation in the stopband.
     b, a = ellip(2, 0.1, 40, wn, "bandpass", analog=False)
-    # Change default padlen to match Matlab output
+    # To match Matlab output, we change default padlen from
+    # 3*(max(len(a), len(b))) to 3*(max(len(a), len(b)) - 1)
     padlen = 3 * (max(len(a), len(b)) - 1)
-    signal_size_GiB = signal.nbytes / 1024**3
-    limit_chunk_size_GiB = 1
 
-    if signal_size_GiB > limit_chunk_size_GiB:
-        num_channels = signal.shape[1]
-        channel_chunk_size = int(limit_chunk_size_GiB * 1024**3 / (signal.nbytes / num_channels))
-
-        num_chunks = int(np.ceil(num_channels / channel_chunk_size))
-
-        for i in range(num_chunks):
-            start_idx = i * channel_chunk_size
-            end_idx = min((i + 1) * channel_chunk_size, num_channels)
-            signal[:, start_idx:end_idx] = filtfilt(b, a, signal[:, start_idx:end_idx], axis=0, padlen=padlen)
-    else:
-        signal = filtfilt(b, a, signal, axis=0, padlen=padlen)
-
-    return signal
+    return filtfilt(b, a, signal, axis=0, padlen=padlen)
 
 
 class DiCarloBandPass(BasePreprocessor):
@@ -236,7 +225,7 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
     recording = worker_ctx["recording"]
     noise_threshold = worker_ctx["noise_threshold"]
 
-    traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame).astype("float32")
+    traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame)
     number_of_channels = recording.get_num_channels()
     sampling_frequency = recording.get_sampling_frequency()
     times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
@@ -269,25 +258,24 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     sampling_frequency = recording.get_sampling_frequency()
     times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
 
-    # Centering the traces (in-place)
-    traces -= np.nanmean(traces, axis=0, keepdims=True)
+    # Centering the traces
+    centered_traces = traces - np.nanmean(traces, axis=0)
 
     # Estimating standard deviation with the MAD
-    absolute_traces = np.abs(traces, out=traces)
-    std_estimate = np.median(absolute_traces, axis=0) / 0.6745
+    std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6745
 
     # Calculating the noise level threshold for each channel
     noise_level = -noise_threshold * std_estimate
 
     # Detecting crossings below the noise level for each channel
-    outside = traces < noise_level[np.newaxis, :]
+    outside = centered_traces < noise_level[np.newaxis, :]
 
-    # Initialize cross array
-    cross = np.zeros_like(outside, dtype=bool)
+    # Creating a cross_diff array with prepend to ensure we capture the initial crossing
+    cross_diff = np.diff(outside.astype(int), axis=0, prepend=outside[0:1, :])
+    cross = cross_diff > 0
 
-    # Manually calculate differences and handle the initial state
-    cross[1:] = outside[1:] & ~outside[:-1]
-    cross[0] = outside[0]
+    # Checking the first point separately
+    cross[0, :] = outside[0, :]
 
     # Find indices where crossings occur
     peaks_idx = np.nonzero(cross)
@@ -295,8 +283,7 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
 
     # Reshape the results into a list of arrays, one for each channel
     channel_indices = peaks_idx[1]
-    num_channels = traces.shape[1]
-    all_peak_times = [peak_times_channels[channel_indices == channel_index] for channel_index in range(num_channels)]
+    all_peak_times = [peak_times_channels[channel_indices == i] for i in range(traces.shape[1])]
 
     return all_peak_times
 
@@ -309,12 +296,14 @@ def thresholding_preprocessing(
     f_high: float = 6_000.0,
     vectorized: bool = True,
 ) -> BasePreprocessor:
+
     if recording.has_scaleable_traces():
         gain = recording.get_channel_gains()
         offset = recording.get_channel_offsets()
     else:
         gain = np.ones(recording.get_num_channels(), dtype="float32")
         offset = np.zeros(recording.get_num_channels(), dtype="float32")
+
     scaled_to_uV_recording = ScaleRecording(recording=recording, gain=gain, offset=offset)
     notched_recording = DiCarloNotch(
         scaled_to_uV_recording, f_notch=f_notch, bandwidth=bandwidth, vectorized=vectorized
