@@ -20,9 +20,9 @@ dependencies = [
   "spikeinterface @ git+https://github.com/spikeinterface/spikeinterface@main",
   "neo @ git+https://github.com/NeuralEnsemble/python-neo@master",
   "scipy",
-  "neo>=0.13.1",
   "matplotlib",
   "psutil",
+  "docker",
 ]
 
 [project.urls]
