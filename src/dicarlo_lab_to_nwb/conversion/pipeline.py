@@ -224,7 +224,7 @@ def calculate_peak_in_chunks(segment_index, start_frame, end_frame, worker_ctx):
 
     recording = worker_ctx["recording"]
     noise_threshold = worker_ctx["noise_threshold"]
-
+    # This extracts the data after notch and bandpass filtering has been applied
     traces = recording.get_traces(segment_index, start_frame=start_frame, end_frame=end_frame)
     number_of_channels = recording.get_num_channels()
     sampling_frequency = recording.get_sampling_frequency()
@@ -258,17 +258,16 @@ def calculate_peak_in_chunks_vectorized(segment_index, start_frame, end_frame, w
     sampling_frequency = recording.get_sampling_frequency()
     times_in_chunk = np.arange(start_frame, end_frame) / sampling_frequency
 
-    # Centering the traces
-    centered_traces = traces - np.nanmean(traces, axis=0)
+    # Centering the traces (in-place)
+    traces -= np.nanmean(traces, axis=0, keepdims=True)
 
-    # Estimating standard deviation with the MAD
-    std_estimate = np.median(np.abs(centered_traces), axis=0) / 0.6745
-
-    # Calculating the noise level threshold for each channel
+    # Estimating standard deviation with the MAD and the noise level
+    absolute_traces = np.abs(traces)
+    std_estimate = np.median(absolute_traces, axis=0) / 0.6745
     noise_level = -noise_threshold * std_estimate
 
     # Detecting crossings below the noise level for each channel
-    outside = centered_traces < noise_level[np.newaxis, :]
+    outside = traces < noise_level[np.newaxis, :]
 
     # Creating a cross_diff array with prepend to ensure we capture the initial crossing
     cross_diff = np.diff(outside.astype(int), axis=0, prepend=outside[0:1, :])
