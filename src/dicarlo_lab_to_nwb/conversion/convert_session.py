@@ -118,8 +118,8 @@ if __name__ == "__main__":
     session_time = "161322"
 
     # This one has a jump in time
-    # session_date = "20230214"
-    # session_time = "140610"
+    session_date = "20230214"
+    session_time = "140610"
 
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = True
+    stub_test = False
     verbose = True
 
     session_to_nwb(

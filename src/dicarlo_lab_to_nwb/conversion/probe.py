@@ -212,3 +212,9 @@ def attach_probe_to_recording(recording: IntanRecordingExtractor):
     number_to_probe_name = {0: "ProbeABC", 1: "ProbeDEF", 2: "ProbeGH"}  #
     probe_names = [number_to_probe_name[int(group_name)] for group_name in group_numbers]
     recording.set_property("probe", probe_names)
+
+    # This is redundant but adding here to shield this pipeline from changes in the spikeinterface and neo API
+    available_properties = recording.get_property_keys()
+    if "channel_names" not in available_properties:
+        channel_names = recording.get_channel_ids()
+        recording.set_property("channel_names", channel_names)
