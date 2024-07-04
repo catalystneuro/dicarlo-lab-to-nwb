@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import numpy as np
 from scipy.signal import ellip, filtfilt
@@ -379,11 +380,73 @@ def thresholding_pipeline(
     return spike_times_per_channel
 
 
+def calculate_tresholding_events_from_nwb(
+    nwbfile_path,
+    f_notch: float = 60.0,
+    bandwidth: float = 10,
+    f_low: float = 300.0,
+    f_high: float = 6_000.0,
+    noise_threshold: float = 3,
+    vectorized: bool = True,
+    job_kwargs: dict = None,
+):
+
+    nwbfile_path = Path(nwbfile_path)
+    assert nwbfile_path.is_file(), f"{nwbfile_path} does not exist"
+
+    from spikeinterface.core import NumpySorting, aggregate_units
+    from spikeinterface.extractors import NwbRecordingExtractor
+
+    nwb_recording = NwbRecordingExtractor(file_path=nwbfile_path)
+
+    verbose = job_kwargs.get("verbose", False)
+
+    dict_of_recordings = nwb_recording.split_by(property="probe", outputs="dict")
+    dict_of_spikes_times_per_channel = {}
+
+    for probe_name, probe_recording in dict_of_recordings.items():
+        if verbose:
+            print(f"Processing probe {probe_name}")
+            print(probe_recording)
+        spikes_times_per_channel = thresholding_pipeline(
+            recording=probe_recording,
+            f_notch=f_notch,
+            bandwidth=bandwidth,
+            f_low=f_low,
+            f_high=f_high,
+            noise_threshold=noise_threshold,
+            vectorized=vectorized,
+            job_kwargs=job_kwargs,
+        )
+
+        dict_of_spikes_times_per_channel[probe_name] = spikes_times_per_channel
+
+    sampling_frequency = nwb_recording.get_sampling_frequency()
+
+    nwb_recording._file.close()
+    del nwb_recording
+
+    sorting_list = []
+    for probe_name, spikes_times_per_channel in dict_of_spikes_times_per_channel.items():
+        if verbose:
+            print(f"Processing probe {probe_name}")
+        sorting = NumpySorting.from_unit_dict(spikes_times_per_channel, sampling_frequency=sampling_frequency)
+
+        num_units = len(sorting.get_unit_ids())
+        values = [probe_name] * num_units
+        sorting.set_property(key="probe", values=values)
+        sorting_list.append(sorting)
+
+    full_sorting = aggregate_units(sorting_list=sorting_list)
+
+    return full_sorting
+
+
 if __name__ == "__main__":
     from spikeinterface.core.generate import generate_ground_truth_recording
     from spikeinterface.core.job_tools import ChunkRecordingExecutor
 
-    from dicarlo_lab_to_nwb.conversion.pipeline import di_carlo_pipeline
+    from dicarlo_lab_to_nwb.conversion.pipeline import thresholding_pipeline
 
     recording, sorting = generate_ground_truth_recording(num_channels=4, num_units=1, durations=[1], seed=0)
 
@@ -393,7 +456,7 @@ if __name__ == "__main__":
     f_high = 6000.0
     noise_threshold = 3
 
-    spikes_per_channel = di_carlo_pipeline(
+    spikes_per_channel = thresholding_pipeline(
         recording=recording,
         f_notch=f_notch,
         bandwidth=bandwidth,

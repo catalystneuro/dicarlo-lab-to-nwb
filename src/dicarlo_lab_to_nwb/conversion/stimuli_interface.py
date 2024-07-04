@@ -41,7 +41,7 @@ class StimuliImagesInterface(BaseDataInterface):
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
         ground_truth_time_column = "samp_on_us"
-        image_presentation_time = mwkorks_df[ground_truth_time_column] / 1e6
+        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column] / 1e6
         stimulus_ids = mwkorks_df["stimulus_presented"]
 
         unique_stimulus_ids = stimulus_ids.unique()
@@ -84,7 +84,7 @@ class StimuliImagesInterface(BaseDataInterface):
             data=data,
             indexed_images=images_container,
             unit="N/A",
-            timestamps=image_presentation_time.values,
+            timestamps=image_presentation_time_seconds.values,
             description="Stimulus presentation index",
         )
 
