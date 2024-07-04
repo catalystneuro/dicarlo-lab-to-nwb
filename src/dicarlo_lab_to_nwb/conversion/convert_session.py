@@ -14,6 +14,10 @@ from dicarlo_lab_to_nwb.conversion.data_locator import (
     locate_intan_file_path,
     locate_mworks_processed_file_path,
 )
+from dicarlo_lab_to_nwb.conversion.pipeline import (
+    calculate_thresholding_events_from_nwb,
+    write_thresholding_events_to_nwb,
+)
 from dicarlo_lab_to_nwb.conversion.probe import attach_probe_to_recording
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import StimuliImagesInterface
 
@@ -91,7 +95,7 @@ def session_to_nwb(
     subject_metadata = metadata["Subject"]
     subject_metadata["subject_id"] = f"{subject}"
 
-    # Run conversion
+    # Run conversion, this adds the basic data to the NWBFile
     converter_pipe.run_conversion(
         metadata=metadata,
         nwbfile_path=nwbfile_path,
@@ -108,6 +112,26 @@ def session_to_nwb(
             print(f"Conversion took {conversion_time_seconds / 60:.2f} minutes")
         else:
             print(f"Conversion took {conversion_time_seconds / 60 / 60:.2f} hours")
+
+    # Calculate thresholding events
+    start_time = time.time()
+    chunk_duration = 10.0  # This is fixed
+    job_kwargs = dict(n_jobs=-1, progress_bar=True, verbose=verbose, chunk_duration=chunk_duration)
+    sorting = calculate_thresholding_events_from_nwb(
+        nwbfile_path=nwbfile_path, job_kwargs=job_kwargs, stub_test=stub_test
+    )
+    write_thresholding_events_to_nwb(sorting=sorting, nwbfile_path=nwbfile_path, append=True)
+
+    stop_time = time.time()
+
+    if verbose:
+        thresholding_time = stop_time - start_time
+        if thresholding_time <= 60 * 3:
+            print(f"Thresholding events took {thresholding_time:.2f} seconds")
+        elif thresholding_time <= 60 * 60:
+            print(f"Thresholding events took {thresholding_time / 60:.2f} minutes")
+        else:
+            print(f"Thresholding events took {thresholding_time / 60 / 60:.2f} hours")
 
 
 if __name__ == "__main__":
