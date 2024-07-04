@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.signal import ellip, filtfilt
-from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
+from spikeinterface.core import BaseRecording, BaseSorting, ChunkRecordingExecutor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
     BasePreprocessor,
@@ -380,8 +380,8 @@ def thresholding_pipeline(
     return spike_times_per_channel
 
 
-def calculate_tresholding_events_from_nwb(
-    nwbfile_path,
+def calculate_thresholding_events_from_nwb(
+    nwbfile_path: Path | str,
     f_notch: float = 60.0,
     bandwidth: float = 10,
     f_low: float = 300.0,
@@ -389,15 +389,61 @@ def calculate_tresholding_events_from_nwb(
     noise_threshold: float = 3,
     vectorized: bool = True,
     job_kwargs: dict = None,
-):
+    stub_test: bool = False,
+) -> BaseSorting:
+    """
+    Extracts spike events from an NWB file using a thresholding pipeline and returns the sorted spike times.
 
+    Parameters
+    ----------
+    nwbfile_path : Path or str
+        Path to the NWB file containing the neural recordings.
+    f_notch : float, optional
+        Notch filter frequency to remove power line noise, by default 60.0 Hz.
+    bandwidth : float, optional
+        Bandwidth for the notch filter, by default 10 Hz.
+    f_low : float, optional
+        Low cutoff frequency for bandpass filtering, by default 300.0 Hz.
+    f_high : float, optional
+        High cutoff frequency for bandpass filtering, by default 6000.0 Hz.
+    noise_threshold : float, optional
+        Threshold for detecting spikes, by default 3.
+    vectorized : bool, optional
+        Whether to use a vectorized implementation of the thresholding, by default True.
+    job_kwargs : dict, optional
+        Additional keyword arguments for job control, such as verbosity, by default None.
+
+    Returns
+    -------
+    BaseSorting
+        An object containing the sorted spike times and related metadata.
+
+    Raises
+    ------
+    AssertionError
+        If the NWB file does not exist at the specified path.
+
+    Notes
+    -----
+    This function reads an NWB file, applies filtering and thresholding to detect spike events, and returns the
+    detected spike times. The processing is done separately for each probe in the recording.
+    """
     nwbfile_path = Path(nwbfile_path)
     assert nwbfile_path.is_file(), f"{nwbfile_path} does not exist"
 
     from spikeinterface.core import NumpySorting, aggregate_units
     from spikeinterface.extractors import NwbRecordingExtractor
 
-    nwb_recording = NwbRecordingExtractor(file_path=nwbfile_path)
+    _nwb_recording = NwbRecordingExtractor(file_path=nwbfile_path, use_pynwb=True)
+    sampling_frequency = _nwb_recording.get_sampling_frequency()
+
+    if stub_test:
+        # Five minutes
+        duration = _nwb_recording.get_duration() - 1 / sampling_frequency
+        end_time = min(10.0, duration)
+        nwb_recording = _nwb_recording.time_slice(start_time=0, end_time=end_time)
+    else:
+        nwb_recording = _nwb_recording
 
     verbose = job_kwargs.get("verbose", False)
 
@@ -421,25 +467,58 @@ def calculate_tresholding_events_from_nwb(
 
         dict_of_spikes_times_per_channel[probe_name] = spikes_times_per_channel
 
-    sampling_frequency = nwb_recording.get_sampling_frequency()
-
-    nwb_recording._file.close()
-    del nwb_recording
+    channel_locations = nwb_recording.get_channel_locations()
 
     sorting_list = []
     for probe_name, spikes_times_per_channel in dict_of_spikes_times_per_channel.items():
         if verbose:
             print(f"Processing probe {probe_name}")
-        sorting = NumpySorting.from_unit_dict(spikes_times_per_channel, sampling_frequency=sampling_frequency)
+        spike_frames_per_channel = {
+            channel_id: (times * sampling_frequency).round().astype("uint")
+            for channel_id, times in spikes_times_per_channel.items()
+        }
+        probe_sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
 
-        num_units = len(sorting.get_unit_ids())
+        num_units = len(probe_sorting.get_unit_ids())
         values = [probe_name] * num_units
-        sorting.set_property(key="probe", values=values)
-        sorting_list.append(sorting)
+        probe_sorting.set_property(key="probe", values=values)
+        sorting_list.append(probe_sorting)
 
-    full_sorting = aggregate_units(sorting_list=sorting_list)
+    sorting = aggregate_units(sorting_list=sorting_list)
+    # Aggregate sorting does not preserve ids
+    channel_ids = nwb_recording.get_channel_ids()
+    sorting = sorting.rename_units(new_unit_ids=channel_ids)
+    sorting.set_property(key="unit_location_um", values=channel_locations)
 
-    return full_sorting
+    del _nwb_recording
+    del nwb_recording
+
+    return sorting
+
+
+def write_thresholding_events_to_nwb(sorting: BaseSorting, nwbfile_path: str | Path, append=False):
+
+    from neuroconv.tools.spikeinterface import add_sorting
+    from pynwb import NWBHDF5IO
+
+    mode = "a" if append else "r"
+
+    with NWBHDF5IO(nwbfile_path, mode=mode) as io:
+        nwbfile = io.read()
+
+        add_sorting(nwbfile=nwbfile, sorting=sorting)
+
+        if append:
+            io.write(nwbfile)
+
+        else:
+            nwbfile.generate_new_id()
+            nwbfile_path = nwbfile_path.with_name(nwbfile_path.stem + "_sorted.nwb")
+
+            with NWBHDF5IO(nwbfile_path, mode="w") as export_io:
+                export_io.export(src_io=io, nwbfile=nwbfile)
+
+    return nwbfile_path
 
 
 if __name__ == "__main__":
