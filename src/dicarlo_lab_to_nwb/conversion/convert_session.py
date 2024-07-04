@@ -50,7 +50,7 @@ def session_to_nwb(
     # Add Intan Interface
     intan_recording_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
     attach_probe_to_recording(recording=intan_recording_interface.recording_extractor)
-
+    # intan_recording_interface.recording_extractor = intan_recording_interface.recording_extractor.time_slice(start_time=0, end_time=10.0)
     conversion_options["Recording"] = dict(
         stub_test=stub_test,
         iterator_opts={"display_progress": True, "buffer_gb": 5},
@@ -118,8 +118,8 @@ if __name__ == "__main__":
     session_time = "161322"
 
     # This one has a jump in time
-    session_date = "20230214"
-    session_time = "140610"
+    # session_date = "20230214"
+    # session_time = "140610"
 
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
