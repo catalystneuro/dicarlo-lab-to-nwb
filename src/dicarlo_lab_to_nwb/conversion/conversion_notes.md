@@ -41,7 +41,10 @@ The mworks processed files have a different naming convention:
 PosixPath('.../exp_domain-transfer-2023/exp_domain-transfer-2023.sub_pico/raw_files/mworksproc/pico_domain-transfer-2023_230214_140610_mwk.csv')
 ```
 
-Note that the date `230214`  is not the same as `20230214` which is used to access other files. They cut the first two digits of the year.
+Note that the date `230214`  is not the same as `20230214` which is used to access other files. They cut the first two digits of the year. This seems
+to only happn for the mworks processed files of domain-transfer-2023 and not for the mworks processed files of Co32
+
+I don't have matching files for mworks processed and intan raw for the Co3D experiment.
 
 ## Single session structure
 

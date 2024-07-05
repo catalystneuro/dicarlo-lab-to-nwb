@@ -14,8 +14,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
 
     keywords = ["behavior"]
 
-    def __init__(self, file_path: str):
-        # This should load the data lazily and prepare variables you need
+    def __init__(self, file_path: str | Path):
         self.file_path = Path(file_path)
 
     def get_metadata(self) -> DeepDict:
@@ -25,7 +24,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
         return metadata
 
     def add_to_nwbfile(self, nwbfile: NWBFile, metadata: dict):
-        # In this experiment the presentation of stimuli is batched as groups of at most 8 images.
+        # In this experiment setup the presentation of stimuli is batched as groups of at most 8 images.
         # Every presentation starts with a stim_on_time, then up to 8 images are presented
         # for stim_on time, then there is a stim_off_time before the next presentation.
         # The extract time of the presentation is samp_on_us or photo_diode_on_us.
@@ -53,10 +52,17 @@ class BehavioralTrialsInterface(BaseDataInterface):
             "stimulus_presented": "The stimulus ID presented",
             "fixation_correct": "Whether the fixation was correct during this stimulus presentation",
             "stimuli_block_index": "The index of the block of stimuli presented",
-            "stimulus_size_degrees": "The size of the stimulus in degrees",
-            "fixation_window_size_degrees": "The size of the fixation window in degrees",
-            "fixation_point_size_degrees": "The size of the fixation point in degrees",
         }
+
+        # Add information of the following columns if they are present in the dataframe
+        if "stimulus_size_degrees" in mwkorks_df.columns:
+            descriptions["stimulus_size_degrees"] = "The size of the stimulus in degrees"
+
+        if "fixation_window_size_degrees" in mwkorks_df.columns:
+            descriptions["fixation_window_size_degrees"] = "The size of the fixation window in degrees"
+
+        if "fixation_point_size_degrees" in mwkorks_df.columns:
+            descriptions["fixation_point_size_degrees"] = "The size of the fixation point in degrees"
 
         for column_name, description in descriptions.items():
             nwbfile.add_trial_column(name=column_name, description=description)

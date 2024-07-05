@@ -3,13 +3,20 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from neuroconv.basedatainterface import BaseDataInterface
+from neuroconv.datainterfaces.behavior.video.video_utils import VideoCaptureContext
 from neuroconv.utils import DeepDict
 from PIL import Image
 from pynwb.base import ImageReferences
 from pynwb.file import NWBFile
-from pynwb.image import GrayscaleImage, Images, IndexSeries, RGBAImage, RGBImage
-
-map_image_set_to_folder_name = {"domain-transfer-2023": "RSVP-domain_transfer"}
+from pynwb.image import (
+    GrayscaleImage,
+    Images,
+    ImageSeries,
+    IndexSeries,
+    RGBAImage,
+    RGBImage,
+)
+from tqdm import tqdm
 
 
 class StimuliImagesInterface(BaseDataInterface):
@@ -20,15 +27,10 @@ class StimuliImagesInterface(BaseDataInterface):
     def __init__(self, file_path: str | Path, folder_path: str | Path, image_set_name: str):
         # This should load the data lazily and prepare variables you need
         self.file_path = Path(file_path)
-        experiment_folder = map_image_set_to_folder_name[image_set_name]
         self.image_set_name = image_set_name
 
-        self.stimuli_folder = folder_path / experiment_folder
+        self.stimuli_folder = Path(folder_path)
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
-
-        if self.image_set_name == "domain-transfer-2023":
-            self.stimuli_folder = self.stimuli_folder / "images"
-            assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
 
     def get_metadata(self) -> DeepDict:
         # Automatically retrieve as much metadata as possible from the source files available
@@ -90,3 +92,55 @@ class StimuliImagesInterface(BaseDataInterface):
 
         nwbfile.add_stimulus(images_container)
         nwbfile.add_stimulus(index_series)
+
+
+class StimuliVideoInterface(BaseDataInterface):
+
+    def __init__(self, file_path: str | Path, folder_path: str | Path, image_set_name: str):
+        # This should load the data lazily and prepare variables you need
+        self.file_path = Path(file_path)
+        self.stimuli_folder = Path(folder_path)
+
+        assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
+        self.image_set_name = image_set_name
+
+    def add_to_nwbfile(self, nwbfile: NWBFile, metadata: dict):
+        dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
+        mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
+
+        ground_truth_time_column = "samp_on_us"
+        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column].values / 1e6
+
+        stimuli_presented = mwkorks_df.stimulus_presented.values
+
+        file_path_list = [self.stimuli_folder / f"{stimuli_number + 1}.mp4" for stimuli_number in stimuli_presented]
+        missing_file_path = [file_path for file_path in file_path_list if not file_path.is_file()]
+        assert len(missing_file_path) == 0, f"Missing files: {missing_file_path}"
+
+        timestamps_per_video = []
+        number_of_frames = []
+        sampling_rates = []
+
+        for file_path in tqdm(file_path_list, desc="Processing videos", unit="videos_processed"):
+            with VideoCaptureContext(file_path) as video_context:
+                timestamps_per_video.append(video_context.get_video_timestamps(display_progress=False))
+                number_of_frames.append(video_context.get_video_frame_count())
+                sampling_rates.append(video_context.get_video_fps())
+
+        # Shift the video timestamps by their presentation time
+        corrected_timestamps = np.concatenate(
+            [ts + image_presentation_time_seconds[i] for i, ts in enumerate(timestamps_per_video)]
+        )
+        starting_frame = np.zeros_like(number_of_frames)
+        starting_frame[1:] = np.cumsum(number_of_frames)[:-1]
+
+        image_series = ImageSeries(
+            name="stimuli",
+            description=f"{self.image_set_name}",
+            unit="n.a.",
+            external_file=file_path_list,
+            timestamps=corrected_timestamps,
+            starting_frame=starting_frame,
+        )
+
+        nwbfile.add_stimulus(image_series)
