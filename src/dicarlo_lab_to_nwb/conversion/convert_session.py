@@ -37,6 +37,7 @@ def session_to_nwb(
     stub_test: bool = False,
     verbose: bool = False,
     add_thresholding_events: bool = True,
+    stimuli_are_video: bool = False,
 ):
 
     start = time.time()
@@ -52,28 +53,34 @@ def session_to_nwb(
     conversion_options = dict()
 
     # Add Intan Interface
-    # intan_recording_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
-    # attach_probe_to_recording(recording=intan_recording_interface.recording_extractor)
-    # # intan_recording_interface.recording_extractor = intan_recording_interface.recording_extractor.time_slice(start_time=0, end_time=10.0)
-    # conversion_options["Recording"] = dict(
-    #     stub_test=stub_test,
-    #     iterator_opts={"display_progress": True, "buffer_gb": 5},
-    # )
+    intan_recording_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
+    attach_probe_to_recording(recording=intan_recording_interface.recording_extractor)
+    conversion_options["Recording"] = dict(
+        stub_test=stub_test,
+        iterator_opts={"display_progress": True, "buffer_gb": 5},
+    )
 
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
 
     # Add Stimuli Interface
-    stimuli_interface = StimuliVideoInterface(
-        file_path=mworks_processed_file_path,
-        folder_path=stimuli_folder,
-        image_set_name=image_set_name,
-        video_copy_path=output_dir_path / "videos",
-    )
+    if stimuli_are_video:
+        stimuli_interface = StimuliVideoInterface(
+            file_path=mworks_processed_file_path,
+            folder_path=stimuli_folder,
+            image_set_name=image_set_name,
+            video_copy_path=output_dir_path / "videos",
+        )
+    else:
+        stimuli_interface = StimuliImagesInterface(
+            file_path=mworks_processed_file_path,
+            folder_path=stimuli_folder,
+            image_set_name=image_set_name,
+        )
 
     # Build the converter pipe with the previously defined data interfaces
     data_interfaces_dict = {
-        # "Recording": intan_recording_interface,
+        "Recording": intan_recording_interface,
         "Behavior": behavioral_trials_interface,
         "Stimuli": stimuli_interface,
     }
@@ -148,22 +155,22 @@ if __name__ == "__main__":
     # session_time = "140610"
 
     # Video one (does not have intan)
-    image_set_name = "Co3D"
-    subject = "pico"
-    session_date = "230627"
-    session_time = "114317"
+    # image_set_name = "Co3D"
+    # subject = "pico"
+    # session_date = "230627"
+    # session_time = "114317"
 
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
 
     intan_file_path = None
-    # intan_file_path = locate_intan_file_path(
-    #     data_folder=data_folder,
-    #     image_set_name=image_set_name,
-    #     subject=subject,
-    #     session_date=session_date,
-    #     session_time=session_time,
-    # )
+    intan_file_path = locate_intan_file_path(
+        data_folder=data_folder,
+        image_set_name=image_set_name,
+        subject=subject,
+        session_date=session_date,
+        session_time=session_time,
+    )
 
     mworks_processed_file_path = locate_mworks_processed_file_path(
         data_folder=data_folder,
@@ -173,15 +180,14 @@ if __name__ == "__main__":
         session_time=session_time,
     )
 
-    # stimuli_folder = data_folder / "StimulusSets"
-
-    stimuli_folder = data_folder / "StimulusSets" / "Co3D" / "videos_mworks"
-    assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
+    stimuli_folder = data_folder / "StimulusSets" / "RSVP-domain_transfer" / "images"
+    # stimuli_folder = data_folder / "StimulusSets" / "Co3D" / "videos_mworks"
+    # assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = False
+    stub_test = True
     verbose = True
-    add_thresholding_events = False
+    add_thresholding_events = True
 
     session_to_nwb(
         image_set_name=image_set_name,

@@ -104,6 +104,8 @@ class StimuliVideoInterface(BaseDataInterface):
         self.file_path = Path(file_path)
         self.stimuli_folder = Path(folder_path)
         self.video_copy_path = Path(video_copy_path) if video_copy_path is not None else None
+        if self.video_copy_path:
+            self.video_copy_path.mkdir(parents=True, exist_ok=True)
 
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
         self.image_set_name = image_set_name
