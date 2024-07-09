@@ -98,9 +98,9 @@ def locate_mworks_processed_file_path(
     subject : str
         The identifier for the subject in the experiment.
     session_date : str
-        The date of the recording session (e.g., '2024-06-24').
+        The date of the recording session (e.g., '20240624').
     session_time : str
-        The time of the recording session (e.g., '15-30-00').
+        The time of the recording session (e.g., '153000').
 
     Returns
     -------
@@ -112,6 +112,8 @@ def locate_mworks_processed_file_path(
     AssertionError
         If any of the expected directories or files are not found.
     """
+
+    has_short_date = {"domain-transfer-2023": True, "Co3D": False}
 
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
 
@@ -127,7 +129,11 @@ def locate_mworks_processed_file_path(
     mworks_processed_folder = raw_data_folder / "mworksproc"
     assert mworks_processed_folder.is_dir(), f"mworksproc folder not found: {mworks_processed_folder}"
 
-    session_id = f"{subject}_{image_set_name}_{session_date[2:]}_{session_time}"
+    if has_short_date[image_set_name]:
+        session_date_mworks = session_date[2:]
+    else:
+        session_date_mworks = session_date
+    session_id = f"{subject}_{image_set_name}_{session_date_mworks}_{session_time}"
     mworks_processed_file_path = mworks_processed_folder / f"{session_id}_mwk.csv"
     assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
 
