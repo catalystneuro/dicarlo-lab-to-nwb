@@ -68,6 +68,7 @@ def session_to_nwb(
         file_path=mworks_processed_file_path,
         folder_path=stimuli_folder,
         image_set_name=image_set_name,
+        video_copy_path=output_dir_path / "videos",
     )
 
     # Build the converter pipe with the previously defined data interfaces

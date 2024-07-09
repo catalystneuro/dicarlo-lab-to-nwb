@@ -98,12 +98,12 @@ class StimuliImagesInterface(BaseDataInterface):
 class StimuliVideoInterface(BaseDataInterface):
 
     def __init__(
-        self, file_path: str | Path, folder_path: str | Path, image_set_name: str, video_output_path: str | Path = None
+        self, file_path: str | Path, folder_path: str | Path, image_set_name: str, video_copy_path: str | Path = None
     ):
         # This should load the data lazily and prepare variables you need
         self.file_path = Path(file_path)
         self.stimuli_folder = Path(folder_path)
-        self.video_output_path = Path(video_output_path) if video_output_path is not None else None
+        self.video_copy_path = Path(video_copy_path) if video_copy_path is not None else None
 
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
         self.image_set_name = image_set_name
@@ -149,8 +149,8 @@ class StimuliVideoInterface(BaseDataInterface):
 
         nwbfile.add_stimulus(image_series)
 
-        if self.video_output_path:
-            # Copy all the videos in file_path_list to the video_output_path
+        if self.video_copy_path:
+            # Copy all the videos in file_path_list to the video_copy_path
             for file_path in file_path_list:
-                video_output_file_path = self.video_output_path / file_path.name
+                video_output_file_path = self.video_copy_path / file_path.name
                 shutil.copy(file_path, video_output_file_path)
