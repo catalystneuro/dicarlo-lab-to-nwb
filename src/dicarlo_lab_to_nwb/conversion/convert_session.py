@@ -19,6 +19,7 @@ from dicarlo_lab_to_nwb.conversion.pipeline import (
     write_thresholding_events_to_nwb,
 )
 from dicarlo_lab_to_nwb.conversion.probe import attach_probe_to_recording
+from dicarlo_lab_to_nwb.conversion.psth import write_psth_to_nwbfile
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     StimuliImagesInterface,
     StimuliVideoInterface,
@@ -37,10 +38,11 @@ def session_to_nwb(
     stub_test: bool = False,
     verbose: bool = False,
     add_thresholding_events: bool = True,
+    add_psth: bool = True,
     stimuli_are_video: bool = False,
 ):
-
-    start = time.time()
+    if verbose:
+        start = time.time()
 
     output_dir_path = Path(output_dir_path)
     if stub_test:
@@ -111,8 +113,8 @@ def session_to_nwb(
         overwrite=True,
     )
 
-    stop_time = time.time()
     if verbose:
+        stop_time = time.time()
         conversion_time_seconds = stop_time - start
         if conversion_time_seconds <= 60 * 3:
             print(f"Conversion took {conversion_time_seconds:.2f} seconds")
@@ -123,17 +125,21 @@ def session_to_nwb(
 
     # Calculate thresholding events
     if add_thresholding_events:
-        start_time = time.time()
+        if verbose:
+            start_time = time.time()
+
         chunk_duration = 10.0  # This is fixed
         job_kwargs = dict(n_jobs=-1, progress_bar=True, verbose=verbose, chunk_duration=chunk_duration)
+
         sorting = calculate_thresholding_events_from_nwb(
-            nwbfile_path=nwbfile_path, job_kwargs=job_kwargs, stub_test=stub_test
+            nwbfile_path=nwbfile_path,
+            job_kwargs=job_kwargs,
+            stub_test=stub_test,
         )
         write_thresholding_events_to_nwb(sorting=sorting, nwbfile_path=nwbfile_path, append=True)
 
-        stop_time = time.time()
-
         if verbose:
+            stop_time = time.time()
             thresholding_time = stop_time - start_time
             if thresholding_time <= 60 * 3:
                 print(f"Thresholding events took {thresholding_time:.2f} seconds")
@@ -141,6 +147,35 @@ def session_to_nwb(
                 print(f"Thresholding events took {thresholding_time / 60:.2f} minutes")
             else:
                 print(f"Thresholding events took {thresholding_time / 60 / 60:.2f} hours")
+
+    # Add PSTH
+    if add_thresholding_events and add_psth:
+        if verbose:
+            start_time = time.time()
+
+        # Make 10 bins of 0.200 seconds each
+        number_of_bins = 10
+        bin_width_in_milliseconds = 400.0 / number_of_bins
+        # This means the first bin starts 200 ms before the image presentation
+        milliseconds_from_event_to_first_bin = -200.0  #
+
+        write_psth_to_nwbfile(
+            nwbfile_path=nwbfile_path,
+            bin_width_in_milliseconds=bin_width_in_milliseconds,
+            number_of_bins=number_of_bins,
+            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+            append=True,
+        )
+
+        if verbose:
+            stop_time = time.time()
+            psth_time = stop_time - start_time
+            if psth_time <= 60 * 3:
+                print(f"PSTH calculation took {psth_time:.2f} seconds")
+            elif psth_time <= 60 * 60:
+                print(f"PSTH calculation took {psth_time / 60:.2f} minutes")
+            else:
+                print(f"PSTH calculation took {psth_time / 60 / 60:.2f} hours")
 
 
 if __name__ == "__main__":
@@ -151,8 +186,16 @@ if __name__ == "__main__":
     session_time = "161322"
 
     # This one has a jump in time
-    # session_date = "20230214"
-    # session_time = "140610"
+    session_date = "20230214"
+    session_time = "140610"
+
+    # Third one
+    session_date = "20230216"
+    session_time = "150919"
+
+    # Fourth one
+    session_date = "20230221"
+    session_time = "130510"
 
     # Video one (does not have intan)
     # image_set_name = "Co3D"
@@ -185,9 +228,10 @@ if __name__ == "__main__":
     # assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = True
+    stub_test = False
     verbose = True
     add_thresholding_events = True
+    add_psht = True
 
     session_to_nwb(
         image_set_name=image_set_name,
@@ -201,4 +245,5 @@ if __name__ == "__main__":
         stub_test=stub_test,
         verbose=verbose,
         add_thresholding_events=add_thresholding_events,
+        add_psth=True,
     )

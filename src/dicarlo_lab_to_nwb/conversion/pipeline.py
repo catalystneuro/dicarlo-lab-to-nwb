@@ -2,6 +2,8 @@ import math
 from pathlib import Path
 
 import numpy as np
+from neuroconv.tools.spikeinterface import add_sorting
+from pynwb import NWBHDF5IO
 from scipy.signal import ellip, filtfilt
 from spikeinterface.core import BaseRecording, BaseSorting, ChunkRecordingExecutor
 from spikeinterface.preprocessing import ScaleRecording
@@ -438,7 +440,6 @@ def calculate_thresholding_events_from_nwb(
     sampling_frequency = _nwb_recording.get_sampling_frequency()
 
     if stub_test:
-        # Five minutes
         duration = _nwb_recording.get_duration() - 1 / sampling_frequency
         end_time = min(10.0, duration)
         nwb_recording = _nwb_recording.time_slice(start_time=0, end_time=end_time)
@@ -471,20 +472,21 @@ def calculate_thresholding_events_from_nwb(
 
     sorting_list = []
     for probe_name, spikes_times_per_channel in dict_of_spikes_times_per_channel.items():
-        if verbose:
-            print(f"Processing probe {probe_name}")
         spike_frames_per_channel = {
             channel_id: (times * sampling_frequency).round().astype("uint")
             for channel_id, times in spikes_times_per_channel.items()
         }
         probe_sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
-
+        if verbose:
+            print(f"Processing probe {probe_name}")
+            print(probe_sorting)
         num_units = len(probe_sorting.get_unit_ids())
         values = [probe_name] * num_units
         probe_sorting.set_property(key="probe", values=values)
         sorting_list.append(probe_sorting)
 
     sorting = aggregate_units(sorting_list=sorting_list)
+
     # Aggregate sorting does not preserve ids
     channel_ids = nwb_recording.get_channel_ids()
     sorting = sorting.rename_units(new_unit_ids=channel_ids)
@@ -497,9 +499,6 @@ def calculate_thresholding_events_from_nwb(
 
 
 def write_thresholding_events_to_nwb(sorting: BaseSorting, nwbfile_path: str | Path, append=False):
-
-    from neuroconv.tools.spikeinterface import add_sorting
-    from pynwb import NWBHDF5IO
 
     mode = "a" if append else "r"
 
