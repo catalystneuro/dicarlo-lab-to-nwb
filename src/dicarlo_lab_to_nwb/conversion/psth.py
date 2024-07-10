@@ -1,7 +1,10 @@
+from pathlib import Path
+
 import numpy as np
+from pynwb import NWBHDF5IO, NWBFile
 
 
-def calculate_event_psth(
+def calculate_event_psth_numpy_naive(
     spike_times_list,
     event_times_seconds,
     bin_width_in_milliseconds,
@@ -47,22 +50,19 @@ def calculate_event_psth(
 
     base_bins_end = bin_width_in_seconds * number_of_bins
     base_bins = np.arange(0, base_bins_end + bin_width_in_seconds, bin_width_in_seconds)
-
-    bins_start = event_times_seconds[:, np.newaxis] + seconds_from_event_to_first_bin
-    bins = bins_start + base_bins[np.newaxis, :]
+    base_bins += seconds_from_event_to_first_bin
 
     number_of_units = len(spike_times_list)
     event_psth = np.full(shape=(number_of_units, number_of_events, number_of_bins), fill_value=np.nan)
     for channel_index, spike_times in enumerate(spike_times_list):
-        spikes_in_bins = np.zeros((base_bins.size * event_times_seconds.size), dtype="uint8")
-        spikes_in_bins[:-1] = np.histogram(spike_times, bins=bins.ravel())[0]
-        spikes_to_store = spikes_in_bins.reshape(event_times_seconds.size, base_bins.size)[:, :-1]
-        event_psth[channel_index, : len(event_times_seconds)] = spikes_to_store
+        for event_index, event_time in enumerate(event_times_seconds):
+            event_bins = event_time + base_bins
+            event_psth[channel_index, event_index] = np.histogram(spike_times, bins=event_bins)[0]
 
     return event_psth
 
 
-def calculate_event_psth_numba(
+def calculate_event_psth(
     spike_times_list,
     event_times_seconds,
     bin_width_in_milliseconds,
@@ -70,9 +70,40 @@ def calculate_event_psth_numba(
     milliseconds_from_event_to_first_bin=0.0,
     number_of_events=None,
 ):
+    """
+    Calculate Peri-Stimulus Time Histogram (PSTH) for given events.
 
-    if hasattr(calculate_event_psth_numba, "_cached_function"):
-        event_psth = calculate_event_psth_numba._cached_function(
+    Parameters
+    ----------
+    spike_times_list : list of arrays
+        List where each element is an array of spike times (in seconds) for a single unit.
+    event_times_seconds : array-like
+        Array of event times (in seconds) for which the PSTH should be calculated.
+    bin_width_in_milliseconds : float
+        Width of each bin in the histogram (in milliseconds).
+    number_of_bins : int
+        Number of bins to include in the histogram.
+    milliseconds_from_event_to_first_bin : float, optional
+        Time offset (in milliseconds) from the event time to the start of the first bin.
+        Default is 0.0. Negative times indicate that the bins start before the event time whereas positive times
+        indicate that the bins start after the event time.
+    number_of_events : int, optional
+        Number of events to include in the calculation. If None, all events in
+        `event_times_seconds` are included. Default is None. This is used if you want to aggregate this PSTH
+        with other PSTHS that have different number of events.
+
+    Returns
+    -------
+    event_psth : ndarray
+        3D array of shape (number_of_units, number_of_events, number_of_bins) containing
+        the PSTH for each unit and event.
+    """
+
+    if number_of_events is None:
+        number_of_events = len(event_times_seconds)
+
+    if hasattr(calculate_event_psth, "_cached_function"):
+        event_psth = calculate_event_psth._cached_function(
             spike_times_list=spike_times_list,
             event_times_seconds=event_times_seconds,
             bin_width_in_milliseconds=bin_width_in_milliseconds,
@@ -86,7 +117,7 @@ def calculate_event_psth_numba(
     import numba
 
     @numba.jit(nopython=True)
-    def _optimized_calculate_event_psth_numba(
+    def _optimized_calculate_event_psth(
         spike_times_list,
         event_times_seconds,
         bin_width_in_milliseconds,
@@ -94,36 +125,6 @@ def calculate_event_psth_numba(
         milliseconds_from_event_to_first_bin,
         number_of_events,
     ):
-        """
-        Calculate Peri-Stimulus Time Histogram (PSTH) for given events.
-
-        Parameters
-        ----------
-        spike_times_list : list of arrays
-            List where each element is an array of spike times (in seconds) for a single unit.
-        event_times_seconds : array-like
-            Array of event times (in seconds) for which the PSTH should be calculated.
-        bin_width_in_milliseconds : float
-            Width of each bin in the histogram (in milliseconds).
-        number_of_bins : int
-            Number of bins to include in the histogram.
-        milliseconds_from_event_to_first_bin : float, optional
-            Time offset (in milliseconds) from the event time to the start of the first bin.
-            Default is 0.0. Negative times indicate that the bins start before the event time whereas positive times
-            indicate that the bins start after the event time.
-        number_of_events : int, optional
-            Number of events to include in the calculation. If None, all events in
-            `event_times_seconds` are included. Default is None. This is used if you want to aggregate this PSTH
-            with other PSTHS that have different number of events.
-
-        Returns
-        -------
-        event_psth : ndarray
-            3D array of shape (number_of_units, number_of_events, number_of_bins) containing
-            the PSTH for each unit and event.
-        """
-        if number_of_events is None:
-            number_of_events = len(event_times_seconds)
 
         # We do everything in seconds
         event_times_seconds = np.asarray(event_times_seconds)
@@ -132,24 +133,21 @@ def calculate_event_psth_numba(
 
         base_bins_end = bin_width_in_seconds * number_of_bins
         base_bins = np.arange(0, base_bins_end + bin_width_in_seconds, bin_width_in_seconds)
-
-        bins_start = event_times_seconds[:, np.newaxis] + seconds_from_event_to_first_bin
-        bins = bins_start + base_bins[np.newaxis, :]
+        base_bins += seconds_from_event_to_first_bin
 
         number_of_units = len(spike_times_list)
         event_psth = np.full(shape=(number_of_units, number_of_events, number_of_bins), fill_value=np.nan)
         for channel_index, spike_times in enumerate(spike_times_list):
-            spikes_in_bins = np.zeros((base_bins.size * event_times_seconds.size), dtype="uint8")
-            spikes_in_bins[:-1] = np.histogram(spike_times, bins=bins.ravel())[0]
-            spikes_to_store = spikes_in_bins.reshape(event_times_seconds.size, base_bins.size)[:, :-1]
-            event_psth[channel_index, : len(event_times_seconds)] = spikes_to_store
+            for event_index, event_time in enumerate(event_times_seconds):
+                event_bins = event_time + base_bins
+                event_psth[channel_index, event_index] = np.histogram(spike_times, bins=event_bins)[0]
 
         return event_psth
 
     # Cache the compiled function
-    calculate_event_psth_numba._cached_function = _optimized_calculate_event_psth_numba
+    calculate_event_psth._cached_function = _optimized_calculate_event_psth
 
-    event_psth = calculate_event_psth_numba._cached_function(
+    event_psth = calculate_event_psth._cached_function(
         spike_times_list=spike_times_list,
         event_times_seconds=event_times_seconds,
         bin_width_in_milliseconds=bin_width_in_milliseconds,
@@ -209,34 +207,111 @@ def calculate_psth_for_event_from_spikes_pespective(
     return event_psth
 
 
-def calculate_event_psth_old(
-    spike_trains_per_unit,
-    event_times,
-    bin_width_in_milliseconds,
-    number_of_bins,
-    milliseconds_from_event_to_first_bin=0.0,
-    number_of_events=None,
+def build_psth_from_nwbfile(
+    nwbfile: NWBFile,
+    bin_width_in_milliseconds: float,
+    number_of_bins: int,
+    milliseconds_from_event_to_first_bin: float = 0.0,
+) -> tuple[dict, dict]:
+    from tqdm import tqdm
+
+    # list of spike_times
+    units_data_frame = nwbfile.units.to_dataframe()
+    unit_ids = units_data_frame["unit_name"].values
+    spike_times = units_data_frame["spike_times"].values
+    dict_of_spikes_times = {id: st for id, st in zip(unit_ids, spike_times)}
+    spike_times_list = [spike_times for spike_times in dict_of_spikes_times.values()]
+
+    trials_dataframe = nwbfile.trials.to_dataframe()
+    stimuli_presentation_times_seconds = trials_dataframe["start_time"]
+    stimuli_presentation_id = trials_dataframe["stimulus_presented"]
+    all_stimuli = stimuli_presentation_id.unique()
+
+    stimuli_presentation_times_dict = {
+        stimulus_id: stimuli_presentation_times_seconds[stimuli_presentation_id == stimulus_id].values
+        for stimulus_id in all_stimuli
+    }
+
+    psth_dict = {}
+    for stimuli_id in tqdm(all_stimuli, desc="Calculating PSTH for stimuli", unit=" stimuli processed"):
+        stimulus_presentation_times = stimuli_presentation_times_dict[stimuli_id]
+        psth_per_stimuli = calculate_event_psth(
+            spike_times_list=spike_times_list,
+            event_times_seconds=stimulus_presentation_times,
+            bin_width_in_milliseconds=bin_width_in_milliseconds,
+            number_of_bins=number_of_bins,
+            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        )
+        psth_dict[stimuli_id] = psth_per_stimuli
+
+    return psth_dict, stimuli_presentation_times_dict
+
+
+def add_psth_to_nwbfile(
+    nwbfile: NWBFile,
+    psth_dict: dict,
+    stimuli_presentation_times_dict: dict,
+    bin_width_in_milliseconds: float,
+    milliseconds_from_event_to_first_bin: float = 0.0,
+):
+    from hdmf.common import DynamicTableRegion
+    from ndx_binned_spikes import BinnedAlignedSpikes
+
+    ecephys_processing_module = nwbfile.create_processing_module(
+        name="ecephys", description="Intermediate data from extracellular electrophysiology recordings, e.g., LFP."
+    )
+
+    for stimulus_id in psth_dict.keys():
+        psth_per_stimuli = psth_dict[stimulus_id]
+        stimulus_presentation_times = stimuli_presentation_times_dict[stimulus_id]
+
+        binned_aligned_spikes = BinnedAlignedSpikes(
+            name=f"BinnedAlignedSpikesStimulusID{stimulus_id}",
+            data=psth_per_stimuli,
+            event_timestamps=stimulus_presentation_times,
+            bin_width_in_milliseconds=bin_width_in_milliseconds,
+            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        )
+
+        ecephys_processing_module.add(binned_aligned_spikes)
+
+
+def write_psth_to_nwbfile(
+    nwbfile_path: Path | str,
+    number_of_bins: int,
+    bin_width_in_milliseconds: float,
+    milliseconds_from_event_to_first_bin: float = 0.0,
+    append: bool = False,
 ):
 
-    if number_of_events is None:
-        number_of_events = len(event_times)
+    mode = "a" if append else "r"
 
-    event_times = np.asarray(event_times)
+    with NWBHDF5IO(nwbfile_path, mode=mode) as io:
+        nwbfile = io.read()
 
-    bin_width_in_seconds = bin_width_in_milliseconds / 1000.0
-    seconds_from_event_to_first_bin = milliseconds_from_event_to_first_bin / 1000.0
-    base_bins_end = bin_width_in_seconds * number_of_bins
-    base_bins = np.linspace(0, base_bins_end, number_of_bins + 1, endpoint=True)
-    number_of_units = len(spike_trains_per_unit)
+        psth_dict, stimuli_presentation_times_dict = build_psth_from_nwbfile(
+            nwbfile=nwbfile,
+            bin_width_in_milliseconds=bin_width_in_milliseconds,
+            number_of_bins=number_of_bins,
+            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        )
 
-    bins_start = event_times[:, np.newaxis] + seconds_from_event_to_first_bin
-    bins = bins_start + base_bins[np.newaxis, :]
+        add_psth_to_nwbfile(
+            nwbfile=nwbfile,
+            psth_dict=psth_dict,
+            stimuli_presentation_times_dict=stimuli_presentation_times_dict,
+            bin_width_in_milliseconds=bin_width_in_milliseconds,
+            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        )
 
-    event_psth = np.full(shape=(number_of_units, number_of_events, number_of_bins), fill_value=np.nan)
-    for channel_index, channel_id in enumerate(spike_trains_per_unit.keys()):
-        spikes_times = spike_trains_per_unit[channel_id]
-        for repetition, event_bins in enumerate(bins):
-            spikes_in_bins = np.histogram(spikes_times, bins=event_bins)[0]
-            event_psth[channel_index, repetition] = spikes_in_bins
+        if append:
+            io.write(nwbfile)
 
-    return event_psth
+        else:
+            nwbfile.generate_new_id()
+            nwbfile_path = nwbfile_path.with_name(nwbfile_path.stem + "_with_psth.nwb")
+
+            with NWBHDF5IO(nwbfile_path, mode="w") as export_io:
+                export_io.export(src_io=io, nwbfile=nwbfile)
+
+    return nwbfile_path

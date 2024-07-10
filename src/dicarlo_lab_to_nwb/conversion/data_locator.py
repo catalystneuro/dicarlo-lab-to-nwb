@@ -138,3 +138,72 @@ def locate_mworks_processed_file_path(
     assert mworks_processed_file_path.is_file(), f"Mworks file not found: {mworks_processed_file_path}"
 
     return mworks_processed_file_path
+
+
+def locate_session_paths(
+    data_folder: Union[Path, str],
+    subject: str,
+    project_name: str,
+    session_date: str,
+) -> list[Path]:
+    """Locates the path to the Intan RHD file based on a specific data structure.
+    This function assumes the following directory structure for storing Intan data:
+    data_folder
+    ├── {subject}
+    │   ├── {project_name}
+    │   │   └── {session_date}
+    │   │       ├── {stimulus_set_0}_{session_date}_{session_time}
+    │   │       |   └── info.rhd    <-- Target file for recording 0
+    │   │       |   └── *.mwk2      <-- Stimulus event file for recording 0
+    │   │       ├── {stimulus_set_1}_{session_date}_{session_time}
+    │   │       |   └── info.rhd  <-- Target file
+    │   │       |   └── *.mwk2      <-- Stimulus event file for recording 1
+    │   │       └── {stimulus_set_2}_{session_date}_{session_time}
+    │   │           └── info.rhd  <-- Target file
+    │   │           └── *.mwk2      <-- Stimulus event file for recording 2
+    If the data structure changes, this function will need to be modified accordingly.
+    Parameters
+    ----------
+    data_folder : Path
+        The root directory where ALL experimental data is stored.
+    subject : str
+        The identifier for the subject in the experiment (e.g., pico).
+    project_name : str
+        The name of the project, which typically includes 'normalizers' and the test stimuli (images or videos, e.g., CO3D or MURI1320).
+    stimulus_set_name : str
+        The name of the stimulus set used in each daily session.
+        This method will iterate subfolders (stimulus sets) as there could be many (e.g., Normalizers, CO3D).
+    session_date : str
+        The date of recording a stimulus_set (within a recording session) in YYYYMMDD (e.g., '20240624').
+
+    Returns
+    -------
+    List of Paths
+        List of Paths according to each subfolder in the session_date folder.
+    Raises
+    ------
+    AssertionError
+        If any of the expected directories or files are not found.
+    """
+    data_folder = Path(data_folder)
+    assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
+
+    subject_folder = data_folder / f"{subject}"
+    assert subject_folder.is_dir(), f"Subject folder not found: {subject_folder}"
+
+    project_folder = subject_folder / f"{project_name}"
+    assert project_folder.is_dir(), f"Project folder not found: {project_folder}"
+
+    todays_folder = project_folder / f"{session_date}"
+    assert todays_folder.is_dir(), f"Today's folder not found: {todays_folder}"
+
+    # empty list of folders
+    session_folders = []
+    for folder_i in todays_folder.iterdir():
+        if folder_i.is_dir() and not folder_i.name.startswith(".") and not folder_i.name.startswith("processed"):
+            intan_file_path = folder_i / "info.rhd"
+            assert intan_file_path.is_file(), f"Intan file not found in: {folder_i}"
+            print(f"Detected {folder_i.name} in {todays_folder}")
+            session_folders.append(folder_i)
+
+    return session_folders
