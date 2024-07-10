@@ -5,7 +5,14 @@ import numpy as np
 from neuroconv.tools.spikeinterface import add_sorting
 from pynwb import NWBHDF5IO
 from scipy.signal import ellip, filtfilt
-from spikeinterface.core import BaseRecording, BaseSorting, ChunkRecordingExecutor
+from spikeinterface.core import (
+    BaseRecording,
+    BaseSorting,
+    ChunkRecordingExecutor,
+    NumpySorting,
+    aggregate_units,
+)
+from spikeinterface.extractors import NwbRecordingExtractor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
     BasePreprocessor,
@@ -322,12 +329,13 @@ def thresholding_peak_detection(
     noise_threshold: float = 3,
     vectorized: bool = True,
     job_kwargs: dict = None,
+    verbose: bool = False,
 ) -> dict:
     job_name = "DiCarloPeakDetectionPipeline"
 
     if job_kwargs is None:
-        chunk_size = math.ceil(recording.get_num_samples() / 10)
-        job_kwargs = dict(n_jobs=1, verbose=True, progress_bar=True, chunk_size=chunk_size)
+        job_kwargs = dict(n_jobs=-1, progress_bar=True, chunk_size=10)  # Fixed chunk size
+
     init_args = (recording, noise_threshold)
     processor = ChunkRecordingExecutor(
         recording,
@@ -336,6 +344,7 @@ def thresholding_peak_detection(
         init_args,
         handle_returns=True,
         job_name=job_name,
+        verbose=verbose,
         **job_kwargs,
     )
 
@@ -361,6 +370,7 @@ def thresholding_pipeline(
     f_high: float = 6_000.0,
     noise_threshold: float = 3,
     vectorized: bool = True,
+    verbose: bool = False,
     job_kwargs: dict = None,
 ):
 
@@ -377,6 +387,7 @@ def thresholding_pipeline(
         noise_threshold=noise_threshold,
         vectorized=vectorized,
         job_kwargs=job_kwargs,
+        verbose=verbose,
     )
 
     return spike_times_per_channel
@@ -392,6 +403,7 @@ def calculate_thresholding_events_from_nwb(
     vectorized: bool = True,
     job_kwargs: dict = None,
     stub_test: bool = False,
+    verbose: bool = False,
 ) -> BaseSorting:
     """
     Extracts spike events from an NWB file using a thresholding pipeline and returns the sorted spike times.
@@ -413,7 +425,12 @@ def calculate_thresholding_events_from_nwb(
     vectorized : bool, optional
         Whether to use a vectorized implementation of the thresholding, by default True.
     job_kwargs : dict, optional
-        Additional keyword arguments for job control, such as verbosity, by default None.
+        Additional keyword arguments for job control, such as chunk size by default None.
+    stub_test : bool, optional
+        Whether to run a short test on the first 10 seconds of the recording, by default False. This is
+        used for testing the pipeline.
+    verbose : bool, optional
+        Whether to print progress messages, by default False.
 
     Returns
     -------
@@ -433,9 +450,6 @@ def calculate_thresholding_events_from_nwb(
     nwbfile_path = Path(nwbfile_path)
     assert nwbfile_path.is_file(), f"{nwbfile_path} does not exist"
 
-    from spikeinterface.core import NumpySorting, aggregate_units
-    from spikeinterface.extractors import NwbRecordingExtractor
-
     _nwb_recording = NwbRecordingExtractor(file_path=nwbfile_path, use_pynwb=True)
     sampling_frequency = _nwb_recording.get_sampling_frequency()
 
@@ -443,10 +457,9 @@ def calculate_thresholding_events_from_nwb(
         duration = _nwb_recording.get_duration() - 1 / sampling_frequency
         end_time = min(10.0, duration)
         nwb_recording = _nwb_recording.time_slice(start_time=0, end_time=end_time)
+        job_kwargs = dict(n_jobs=1, progress_bar=True, chunk_duration=end_time)
     else:
         nwb_recording = _nwb_recording
-
-    verbose = job_kwargs.get("verbose", False)
 
     dict_of_recordings = nwb_recording.split_by(property="probe", outputs="dict")
     dict_of_spikes_times_per_channel = {}
@@ -464,6 +477,7 @@ def calculate_thresholding_events_from_nwb(
             noise_threshold=noise_threshold,
             vectorized=vectorized,
             job_kwargs=job_kwargs,
+            verbose=verbose,
         )
 
         dict_of_spikes_times_per_channel[probe_name] = spikes_times_per_channel

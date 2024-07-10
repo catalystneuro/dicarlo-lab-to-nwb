@@ -115,8 +115,9 @@ def calculate_event_psth(
         return event_psth
 
     import numba
+    from numba import prange
 
-    @numba.jit(nopython=True)
+    @numba.jit(nopython=True, parallel=True)
     def _optimized_calculate_event_psth(
         spike_times_list,
         event_times_seconds,
@@ -125,7 +126,6 @@ def calculate_event_psth(
         milliseconds_from_event_to_first_bin,
         number_of_events,
     ):
-
         # We do everything in seconds
         event_times_seconds = np.asarray(event_times_seconds)
         bin_width_in_seconds = bin_width_in_milliseconds / 1000.0
@@ -137,7 +137,8 @@ def calculate_event_psth(
 
         number_of_units = len(spike_times_list)
         event_psth = np.full(shape=(number_of_units, number_of_events, number_of_bins), fill_value=np.nan)
-        for channel_index, spike_times in enumerate(spike_times_list):
+        for channel_index in prange(number_of_units):
+            spike_times = spike_times_list[channel_index]
             for event_index, event_time in enumerate(event_times_seconds):
                 event_bins = event_time + base_bins
                 event_psth[channel_index, event_index] = np.histogram(spike_times, bins=event_bins)[0]

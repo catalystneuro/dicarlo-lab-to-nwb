@@ -81,7 +81,7 @@ class StimuliImagesInterface(BaseDataInterface):
         )
 
         stimulus_id_to_index = {stimulus_id: index for index, stimulus_id in enumerate(unique_stimulus_ids)}
-        data = np.array([stimulus_id_to_index[stimulus_id] for stimulus_id in stimulus_ids])
+        data = np.asarray([stimulus_id_to_index[stimulus_id] for stimulus_id in stimulus_ids], dtype=np.uint32)
         index_series = IndexSeries(
             name="stimulus_presentation",
             data=data,
