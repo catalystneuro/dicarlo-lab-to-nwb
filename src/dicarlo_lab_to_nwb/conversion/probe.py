@@ -180,7 +180,7 @@ def build_probe_group(
 
         # We leave a margin of 400 um between probes and the border
         margin_um = 400
-        probe.create_auto_shape(probe_type="circular", margin=margin_um)
+        probe.create_auto_shape(probe_type="rect", margin=margin_um)
         probe.set_device_channel_indices(probe_group_df["digital_channel_index"].values)
 
         probe_group.add_probe(probe)
