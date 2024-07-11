@@ -466,7 +466,7 @@ def calculate_thresholding_events_from_nwb(
 
     for probe_name, probe_recording in dict_of_recordings.items():
         if verbose:
-            print(f"Processing probe {probe_name}")
+            print(f"Calculating thresholding events for probe {probe_name}")
             print(probe_recording)
         spikes_times_per_channel = thresholding_pipeline(
             recording=probe_recording,
@@ -492,7 +492,7 @@ def calculate_thresholding_events_from_nwb(
         }
         probe_sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
         if verbose:
-            print(f"Processing probe {probe_name}")
+            print(f"Building sorting object for probe {probe_name}")
             print(probe_sorting)
         num_units = len(probe_sorting.get_unit_ids())
         values = [probe_name] * num_units
@@ -512,7 +512,12 @@ def calculate_thresholding_events_from_nwb(
     return sorting
 
 
-def write_thresholding_events_to_nwb(sorting: BaseSorting, nwbfile_path: str | Path, append=False):
+def write_thresholding_events_to_nwb(
+    sorting: BaseSorting,
+    nwbfile_path: str | Path,
+    append=False,
+    verbose: bool = False,
+):
 
     mode = "a" if append else "r"
 
@@ -530,6 +535,8 @@ def write_thresholding_events_to_nwb(sorting: BaseSorting, nwbfile_path: str | P
 
             with NWBHDF5IO(nwbfile_path, mode="w") as export_io:
                 export_io.export(src_io=io, nwbfile=nwbfile)
+    if verbose:
+        print(f"Thresholding events written to {nwbfile_path}")
 
     return nwbfile_path
 

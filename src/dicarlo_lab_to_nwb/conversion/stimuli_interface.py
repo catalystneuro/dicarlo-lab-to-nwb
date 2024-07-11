@@ -17,7 +17,7 @@ from pynwb.image import (
     RGBAImage,
     RGBImage,
 )
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 
 class StimuliImagesInterface(BaseDataInterface):
@@ -25,13 +25,15 @@ class StimuliImagesInterface(BaseDataInterface):
 
     keywords = [""]
 
-    def __init__(self, file_path: str | Path, folder_path: str | Path, image_set_name: str):
+    def __init__(self, file_path: str | Path, folder_path: str | Path, image_set_name: str, verbose: bool = False):
         # This should load the data lazily and prepare variables you need
         self.file_path = Path(file_path)
         self.image_set_name = image_set_name
 
         self.stimuli_folder = Path(folder_path)
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
+
+        self.verbose = verbose
 
     def get_metadata(self) -> DeepDict:
         # Automatically retrieve as much metadata as possible from the source files available
@@ -51,7 +53,10 @@ class StimuliImagesInterface(BaseDataInterface):
         unique_stimulus_ids.sort()
 
         image_list = []
-        for stimulus_id in unique_stimulus_ids:
+
+        for stimulus_id in tqdm(
+            unique_stimulus_ids, desc="Processing images", unit=" images", disable=not self.verbose
+        ):
             image_name = f"im{stimulus_id}"
             image_file_path = self.stimuli_folder / f"{image_name}.png"
             assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
@@ -98,7 +103,12 @@ class StimuliImagesInterface(BaseDataInterface):
 class StimuliVideoInterface(BaseDataInterface):
 
     def __init__(
-        self, file_path: str | Path, folder_path: str | Path, image_set_name: str, video_copy_path: str | Path = None
+        self,
+        file_path: str | Path,
+        folder_path: str | Path,
+        image_set_name: str,
+        video_copy_path: str | Path = None,
+        verbose: bool = False,
     ):
         # This should load the data lazily and prepare variables you need
         self.file_path = Path(file_path)
@@ -109,6 +119,8 @@ class StimuliVideoInterface(BaseDataInterface):
 
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
         self.image_set_name = image_set_name
+
+        self.verbose = verbose
 
     def add_to_nwbfile(self, nwbfile: NWBFile, metadata: dict):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}

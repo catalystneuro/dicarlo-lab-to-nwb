@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import numpy as np
+from ndx_binned_spikes import BinnedAlignedSpikes
 from pynwb import NWBHDF5IO, NWBFile
+from tqdm.auto import tqdm
 
 
 def calculate_event_psth_numpy_naive(
@@ -99,6 +101,7 @@ def calculate_event_psth(
         the PSTH for each unit and event.
     """
 
+    event_times_seconds = np.asarray(event_times_seconds)
     if number_of_events is None:
         number_of_events = len(event_times_seconds)
 
@@ -127,7 +130,6 @@ def calculate_event_psth(
         number_of_events,
     ):
         # We do everything in seconds
-        event_times_seconds = np.asarray(event_times_seconds)
         bin_width_in_seconds = bin_width_in_milliseconds / 1000.0
         seconds_from_event_to_first_bin = milliseconds_from_event_to_first_bin / 1000.0
 
@@ -213,8 +215,8 @@ def build_psth_from_nwbfile(
     bin_width_in_milliseconds: float,
     number_of_bins: int,
     milliseconds_from_event_to_first_bin: float = 0.0,
+    verbose: bool = False,
 ) -> tuple[dict, dict]:
-    from tqdm import tqdm
 
     # list of spike_times
     units_data_frame = nwbfile.units.to_dataframe()
@@ -234,7 +236,8 @@ def build_psth_from_nwbfile(
     }
 
     psth_dict = {}
-    for stimuli_id in tqdm(all_stimuli, desc="Calculating PSTH for stimuli", unit=" stimuli processed"):
+    desc = "Calculating PSTH for stimuli"
+    for stimuli_id in tqdm(all_stimuli, desc=desc, unit=" stimuli processed", disable=not verbose):
         stimulus_presentation_times = stimuli_presentation_times_dict[stimuli_id]
         psth_per_stimuli = calculate_event_psth(
             spike_times_list=spike_times_list,
@@ -248,20 +251,25 @@ def build_psth_from_nwbfile(
     return psth_dict, stimuli_presentation_times_dict
 
 
-def add_psth_to_nwbfile(
+def build_binned_spikes_from_nwbfile(
     nwbfile: NWBFile,
-    psth_dict: dict,
-    stimuli_presentation_times_dict: dict,
     bin_width_in_milliseconds: float,
+    number_of_bins: int,
     milliseconds_from_event_to_first_bin: float = 0.0,
-):
-    from hdmf.common import DynamicTableRegion
-    from ndx_binned_spikes import BinnedAlignedSpikes
+    verbose: bool = False,
+) -> dict[BinnedAlignedSpikes]:
 
-    ecephys_processing_module = nwbfile.create_processing_module(
-        name="ecephys", description="Intermediate data from extracellular electrophysiology recordings, e.g., LFP."
+    from hdmf.common import DynamicTableRegion
+
+    psth_dict, stimuli_presentation_times_dict = build_psth_from_nwbfile(
+        nwbfile=nwbfile,
+        bin_width_in_milliseconds=bin_width_in_milliseconds,
+        number_of_bins=number_of_bins,
+        milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        verbose=verbose,
     )
 
+    binned_spikes_dict = {}
     for stimulus_id in psth_dict.keys():
         psth_per_stimuli = psth_dict[stimulus_id]
         stimulus_presentation_times = stimuli_presentation_times_dict[stimulus_id]
@@ -273,16 +281,18 @@ def add_psth_to_nwbfile(
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
         )
+        binned_spikes_dict[stimulus_id] = binned_aligned_spikes
 
-        ecephys_processing_module.add(binned_aligned_spikes)
+    return binned_spikes_dict
 
 
-def write_psth_to_nwbfile(
+def write_binned_spikes_to_nwbfile(
     nwbfile_path: Path | str,
     number_of_bins: int,
     bin_width_in_milliseconds: float,
     milliseconds_from_event_to_first_bin: float = 0.0,
     append: bool = False,
+    verbose: bool = False,
 ):
 
     mode = "a" if append else "r"
@@ -290,29 +300,32 @@ def write_psth_to_nwbfile(
     with NWBHDF5IO(nwbfile_path, mode=mode) as io:
         nwbfile = io.read()
 
-        psth_dict, stimuli_presentation_times_dict = build_psth_from_nwbfile(
+        binned_spikes_dict = build_binned_spikes_from_nwbfile(
             nwbfile=nwbfile,
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             number_of_bins=number_of_bins,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+            verbose=verbose,
         )
 
-        add_psth_to_nwbfile(
-            nwbfile=nwbfile,
-            psth_dict=psth_dict,
-            stimuli_presentation_times_dict=stimuli_presentation_times_dict,
-            bin_width_in_milliseconds=bin_width_in_milliseconds,
-            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        ecephys_processing_module = nwbfile.create_processing_module(
+            name="ecephys", description="Intermediate data from extracellular electrophysiology recordings, e.g., LFP."
         )
+
+        for stimulus_id in binned_spikes_dict.keys():
+            binned_aligned_spikes = binned_spikes_dict[stimulus_id]
+            ecephys_processing_module.add(binned_aligned_spikes)
 
         if append:
             io.write(nwbfile)
 
         else:
             nwbfile.generate_new_id()
-            nwbfile_path = nwbfile_path.with_name(nwbfile_path.stem + "_with_psth.nwb")
+            nwbfile_path = nwbfile_path.with_name(nwbfile_path.stem + "_with_binned_spikes.nwb")
 
             with NWBHDF5IO(nwbfile_path, mode="w") as export_io:
                 export_io.export(src_io=io, nwbfile=nwbfile)
 
+    if verbose:
+        print(f"Appended binned spikes to {nwbfile_path}")
     return nwbfile_path
