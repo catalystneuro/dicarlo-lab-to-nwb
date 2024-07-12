@@ -164,6 +164,7 @@ def session_to_nwb(
             nwbfile_path=nwbfile_path,
             append=True,
             verbose=verbose,
+            thresholindg_pipeline_kwargs=thresholindg_pipeline_kwargs,
         )
 
         if verbose:
@@ -246,7 +247,6 @@ if __name__ == "__main__":
     data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
     assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
 
-    intan_file_path = None
     intan_file_path = locate_intan_file_path(
         data_folder=data_folder,
         image_set_name=image_set_name,
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     # assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = False
+    stub_test = True
     verbose = True
     add_thresholding_events = True
     add_psth = True
