@@ -19,7 +19,7 @@ from dicarlo_lab_to_nwb.conversion.pipeline import (
     write_thresholding_events_to_nwb,
 )
 from dicarlo_lab_to_nwb.conversion.probe import attach_probe_to_recording
-from dicarlo_lab_to_nwb.conversion.psth import write_psth_to_nwbfile
+from dicarlo_lab_to_nwb.conversion.psth import write_binned_spikes_to_nwbfile
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     StimuliImagesInterface,
     StimuliVideoInterface,
@@ -44,6 +44,7 @@ def session_to_nwb(
     psth_kwargs: dict = None,
 ):
     if verbose:
+        total_start = time.time()
         start = time.time()
 
     output_dir_path = Path(output_dir_path)
@@ -62,7 +63,7 @@ def session_to_nwb(
     if stub_test:
         intan_recording = intan_recording_interface.recording_extractor
         duration = intan_recording.get_duration()
-        end_time = min(10, duration)
+        end_time = min(10.0, duration)
         stubed_recording = intan_recording_interface.recording_extractor.time_slice(start_time=0, end_time=end_time)
         intan_recording_interface.recording_extractor = stubed_recording
 
@@ -80,12 +81,14 @@ def session_to_nwb(
             folder_path=stimuli_folder,
             image_set_name=image_set_name,
             video_copy_path=output_dir_path / "videos",
+            verbose=verbose,
         )
     else:
         stimuli_interface = StimuliImagesInterface(
             file_path=mworks_processed_file_path,
             folder_path=stimuli_folder,
             image_set_name=image_set_name,
+            verbose=verbose,
         )
 
     # Build the converter pipe with the previously defined data interfaces
@@ -135,6 +138,8 @@ def session_to_nwb(
     if add_thresholding_events:
         if verbose:
             start_time = time.time()
+            print("Calculating and storing thresholding events with parameters: ")
+            print(thresholindg_pipeline_kwargs)
 
         f_notch = thresholindg_pipeline_kwargs.get("f_notch", None)
         bandwidth = thresholindg_pipeline_kwargs.get("bandwidth", None)
@@ -154,7 +159,12 @@ def session_to_nwb(
             stub_test=stub_test,
             verbose=verbose,
         )
-        write_thresholding_events_to_nwb(sorting=sorting, nwbfile_path=nwbfile_path, append=True)
+        nwbfile_path = write_thresholding_events_to_nwb(
+            sorting=sorting,
+            nwbfile_path=nwbfile_path,
+            append=True,
+            verbose=verbose,
+        )
 
         if verbose:
             stop_time = time.time()
@@ -170,18 +180,21 @@ def session_to_nwb(
     if add_thresholding_events and add_psth:
         if verbose:
             start_time = time.time()
+            print("Calculating and storing PSTH with parameters: ")
+            print(psth_kwargs)
 
         number_of_bins = psth_kwargs.get("num_bins")
         bins_span_milliseconds = psth_kwargs.get("bins_span_milliseconds")
         bin_width_in_milliseconds = bins_span_milliseconds / number_of_bins
         milliseconds_from_event_to_first_bin = psth_kwargs.get("milliseconds_from_event_to_first_bin", None)
 
-        write_psth_to_nwbfile(
+        write_binned_spikes_to_nwbfile(
             nwbfile_path=nwbfile_path,
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             number_of_bins=number_of_bins,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
             append=True,
+            verbose=verbose,
         )
 
         if verbose:
@@ -194,6 +207,16 @@ def session_to_nwb(
             else:
                 print(f"PSTH calculation took {psth_time / 60 / 60:.2f} hours")
 
+    if verbose:
+        total_stop = time.time()
+        total_scrip_time = total_stop - total_start
+        if total_scrip_time <= 60 * 3:
+            print(f"Total script took {total_scrip_time:.2f} seconds")
+        elif total_scrip_time <= 60 * 60:
+            print(f"Total script took {total_scrip_time / 60:.2f} minutes")
+        else:
+            print(f"Total script took {total_scrip_time / 60 / 60:.2f} hours")
+
 
 if __name__ == "__main__":
 
@@ -203,8 +226,8 @@ if __name__ == "__main__":
     session_time = "161322"
 
     # This one has a jump in time
-    # session_date = "20230214"
-    # session_time = "140610"
+    session_date = "20230214"
+    session_time = "140610"
 
     # Third one
     # session_date = "20230216"
@@ -245,17 +268,17 @@ if __name__ == "__main__":
     # assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = True
+    stub_test = False
     verbose = True
     add_thresholding_events = True
     add_psth = True
 
-    job_kwargs = dict(n_jobs=-1, progress_bar=True, chunk_size=10)
+    job_kwargs = dict(n_jobs=-1, progress_bar=True, chunk_duration=10.0)
     f_notch = 60.0
     bandwidth = 10.0
     f_low = 300.0
     f_high = 6000.0
-    noise_threshold = 0.5
+    noise_threshold = 3
     thresholindg_pipeline_kwargs = {
         "job_kwargs": job_kwargs,
         "f_notch": f_notch,
