@@ -515,6 +515,7 @@ def calculate_thresholding_events_from_nwb(
 def write_thresholding_events_to_nwb(
     sorting: BaseSorting,
     nwbfile_path: str | Path,
+    thresholindg_pipeline_kwargs: dict,
     append=False,
     verbose: bool = False,
 ):
@@ -524,7 +525,11 @@ def write_thresholding_events_to_nwb(
     with NWBHDF5IO(nwbfile_path, mode=mode) as io:
         nwbfile = io.read()
 
-        add_sorting(nwbfile=nwbfile, sorting=sorting)
+        units_description = (
+            "Spike times detected using thresholding with DiCarlo lab pipeline and the following parameters: \n "
+            f"{thresholindg_pipeline_kwargs}"
+        )
+        add_sorting(nwbfile=nwbfile, sorting=sorting, units_description=units_description)
 
         if append:
             io.write(nwbfile)

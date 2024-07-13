@@ -217,7 +217,34 @@ def build_psth_from_nwbfile(
     milliseconds_from_event_to_first_bin: float = 0.0,
     verbose: bool = False,
 ) -> tuple[dict, dict]:
+    """
+    Calculate peristimulus time histograms (PSTHs) for each stimulus from an NWB file.
 
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file containing spike times and stimulus information.
+    bin_width_in_milliseconds : float
+        Width of each time bin in milliseconds.
+    number_of_bins : int
+        Total number of bins in the PSTH.
+    milliseconds_from_event_to_first_bin : float, optional
+        Time offset (in milliseconds) from the stimulus onset to the first bin center. Default is 0.0.
+    verbose : bool, optional
+        If True, display a progress bar during calculation. Default is False.
+
+    Returns
+    -------
+    psth_dict : dict
+        Dictionary where keys are stimulus IDs and values are arrays of PSTH counts.
+    stimuli_presentation_times_dict : dict
+        Dictionary where keys are stimulus IDs and values are arrays of stimulus presentation times in seconds.
+
+    Raises
+    ------
+    AssertionError
+        If the NWB file does not contain a units table.
+    """
     # list of spike_times
     units_data_frame = nwbfile.units.to_dataframe()
     unit_ids = units_data_frame["unit_name"].values
@@ -258,8 +285,30 @@ def build_binned_spikes_from_nwbfile(
     milliseconds_from_event_to_first_bin: float = 0.0,
     verbose: bool = False,
 ) -> dict[BinnedAlignedSpikes]:
+    """
+    Build `BinnedAlignedSpikes` objects for each stimulus from an NWB file.
 
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file containing spike times and stimulus information.
+    bin_width_in_milliseconds : float
+        Width of each time bin in milliseconds.
+    number_of_bins : int
+        Total number of bins.
+    milliseconds_from_event_to_first_bin : float, optional
+        Time offset (in milliseconds) from the stimulus onset to the first bin center. Default is 0.0.
+    verbose : bool, optional
+        If True, display a progress bar during calculation. Default is False.
+
+    Returns
+    -------
+    binned_spikes_dict : dict
+        Dictionary where keys are stimulus IDs and values are `BinnedAlignedSpikes` objects.
+    """
     from hdmf.common import DynamicTableRegion
+
+    assert nwbfile.units is not None, "NWBFile does not have units table, psths cannot be calculated."
 
     psth_dict, stimuli_presentation_times_dict = build_psth_from_nwbfile(
         nwbfile=nwbfile,
@@ -267,6 +316,13 @@ def build_binned_spikes_from_nwbfile(
         number_of_bins=number_of_bins,
         milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
         verbose=verbose,
+    )
+
+    units_table = nwbfile.units
+    num_units = units_table["id"].shape[0]
+    region_indices = [i for i in range(num_units)]
+    units_region = DynamicTableRegion(
+        data=region_indices, table=units_table, description="region of units table", name="units_region"
     )
 
     binned_spikes_dict = {}
@@ -280,6 +336,7 @@ def build_binned_spikes_from_nwbfile(
             event_timestamps=stimulus_presentation_times,
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+            units_region=units_region,
         )
         binned_spikes_dict[stimulus_id] = binned_aligned_spikes
 
@@ -293,8 +350,30 @@ def write_binned_spikes_to_nwbfile(
     milliseconds_from_event_to_first_bin: float = 0.0,
     append: bool = False,
     verbose: bool = False,
-):
+) -> Path | str:
+    """
+    Calculate and write binned spike data to an NWB file.
 
+    Parameters
+    ----------
+    nwbfile_path : Path or str
+        Path to the NWB file.
+    number_of_bins : int
+        Total number of bins.
+    bin_width_in_milliseconds : float
+        Width of each time bin in milliseconds.
+    milliseconds_from_event_to_first_bin : float, optional
+        Time offset (in milliseconds) from the stimulus onset to the first bin center. Default is 0.0.
+    append : bool, optional
+        If True, append to the existing file. If False, create a new file. Default is False.
+    verbose : bool, optional
+        If True, print a message when finished. Default is False.
+
+    Returns
+    -------
+    nwbfile_path : Path or str
+        Path to the modified or new NWB file.
+    """
     mode = "a" if append else "r"
 
     with NWBHDF5IO(nwbfile_path, mode=mode) as io:
@@ -309,7 +388,8 @@ def write_binned_spikes_to_nwbfile(
         )
 
         ecephys_processing_module = nwbfile.create_processing_module(
-            name="ecephys", description="Intermediate data from extracellular electrophysiology recordings, e.g., LFP."
+            name="ecephys",
+            description="Intermediate data derived from extracellular electrophysiology recordings such as PSTHs.",
         )
 
         for stimulus_id in binned_spikes_dict.keys():
