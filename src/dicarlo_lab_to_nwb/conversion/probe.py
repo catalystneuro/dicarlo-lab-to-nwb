@@ -120,9 +120,7 @@ def add_intan_wiring_to_probe_data_frame(
     return probe_info_df
 
 
-def build_probe_group(
-    recording: IntanRecordingExtractor,
-) -> ProbeGroup:
+def build_probe_group(recording: IntanRecordingExtractor, probe_info_path: str | Path) -> ProbeGroup:
     """
     Builds a ProbeGroup object from an Intan recording by processing probe information and geometry.
 
@@ -141,6 +139,9 @@ def build_probe_group(
     ----------
     recording : IntanRecordingExtractor
         An instance of IntanRecordingExtractor containing the recording data and channel information.
+    probe_info_path : str | Path
+        Path to the CSV file containing the probe information. If not provided, the default path is used.
+        See the _fetch_default_probe_info_path() function for more information.
 
     Returns
     -------
@@ -149,8 +150,7 @@ def build_probe_group(
     """
 
     # Get the probe info stored in the repo
-    probe_info_path = Path(__file__).parent / "probe_info.csv"
-    assert probe_info_path.is_file(), f"Probe info CSV not found: {probe_info_path}"
+
     probe_info_df = pd.read_csv(filepath_or_buffer=probe_info_path)
 
     # Filter to the ports available in the recording
@@ -188,7 +188,7 @@ def build_probe_group(
     return probe_group
 
 
-def attach_probe_to_recording(recording: IntanRecordingExtractor):
+def attach_probe_to_recording(recording: IntanRecordingExtractor, probe_info_path: str | Path | None = None):
     """
     Builds a ProbeGroup and then attaches to an Intan recording and sets properties for group and probe names.
 
@@ -199,9 +199,15 @@ def attach_probe_to_recording(recording: IntanRecordingExtractor):
     ----------
     recording : IntanRecordingExtractor
         An instance of IntanRecordingExtractor containing the recording data and channel information.
+    probe_info_path : str | Path, optional
+        Path to the CSV file containing the probe information. If not provided, the default path is used.
+        See the _fetch_default_probe_info_path() function for more information.
     """
 
-    probe_group = build_probe_group(recording=recording)
+    if probe_info_path is None:
+        probe_info_path = _fetch_default_probe_info_path()
+
+    probe_group = build_probe_group(recording=recording, probe_info_path=probe_info_path)
     recording.set_probegroup(probe_group, group_mode="by_probe", in_place=True)
 
     group_numbers = recording.get_property("group")
@@ -218,3 +224,37 @@ def attach_probe_to_recording(recording: IntanRecordingExtractor):
     if "channel_names" not in available_properties:
         channel_names = recording.get_channel_ids()
         recording.set_property("channel_names", channel_names)
+
+
+def _fetch_default_probe_info_path() -> Path:
+    """
+    Fetches the default path for the probe information CSV file.
+
+    This function constructs the default path to the probe information CSV file.
+    This data is specially formatted for the series of experiments conducted in the DiCarlo lab that use
+    the two or three Utah arrays connected to the Intan acquisition system.
+
+    The format of the file is as follows:
+
+    | Intan | Connector |  | Array | Bank | elec | label | col | row | probe_group |
+    |-------|-----------|--|-------|------|------|-------|-----|-----|-------------|
+    | C-008 | C         |31| 1     | C    | 31   | elec1 | 9   | 1   | ABC         |
+    | A-007 | A         |32| 2     | A    | 32   | elec2 | 9   | 2   | ABC         |
+    | A-006 | A         |30| 3     | A    | 30   | elec3 | 9   | 3   | ABC         |
+    | A-005 | A         |28| 4     | A    | 28   | elec4 | 9   | 4   | ABC         |
+    | A-004 | A         |26| 5     | A    | 26   | elec5 | 9   | 5   | ABC         |
+    | A-003 | A         |24| 6     | A    | 24   | elec6 | 9   | 6   | ABC         |
+
+    By default the data is packed together with the dicarlo-lab-to-nwb repository and should
+    not require any additional setup.
+
+    Returns
+    -------
+    Path
+        The default path to the probe information CSV file.
+    """
+
+    probe_info_path = Path(__file__).parent / "probe_info.csv"
+    assert probe_info_path.is_file(), f"Probe info CSV not found: {probe_info_path}"
+
+    return probe_info_path
