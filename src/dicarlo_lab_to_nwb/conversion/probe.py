@@ -120,7 +120,7 @@ def add_intan_wiring_to_probe_data_frame(
     return probe_info_df
 
 
-def build_probe_group(recording: IntanRecordingExtractor, probe_info_path: str | Path) -> ProbeGroup:
+def build_probe_group(recording: IntanRecordingExtractor, probe_info_path: str | Path | None = None) -> ProbeGroup:
     """
     Builds a ProbeGroup object from an Intan recording by processing probe information and geometry.
 
@@ -139,7 +139,7 @@ def build_probe_group(recording: IntanRecordingExtractor, probe_info_path: str |
     ----------
     recording : IntanRecordingExtractor
         An instance of IntanRecordingExtractor containing the recording data and channel information.
-    probe_info_path : str | Path
+    probe_info_path : str | Path, optional
         Path to the CSV file containing the probe information. If not provided, the default path is used.
         See the _fetch_default_probe_info_path() function for more information.
 
@@ -149,7 +149,8 @@ def build_probe_group(recording: IntanRecordingExtractor, probe_info_path: str |
         A ProbeGroup object containing the probes with their respective geometric and digital channel information.
     """
 
-    # Get the probe info stored in the repo
+    if probe_info_path is None:
+        probe_info_path = _fetch_default_probe_info_path()
 
     probe_info_df = pd.read_csv(filepath_or_buffer=probe_info_path)
 

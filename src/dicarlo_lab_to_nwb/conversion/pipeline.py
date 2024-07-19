@@ -334,7 +334,7 @@ def thresholding_peak_detection(
     job_name = "DiCarloPeakDetectionPipeline"
 
     if job_kwargs is None:
-        job_kwargs = dict(n_jobs=-1, progress_bar=True, chunk_size=10)  # Fixed chunk size
+        job_kwargs = dict(n_jobs=-1, progress_bar=True, chunk_duration=10.0)  # Fixed chunks to 10 seconds
 
     init_args = (recording, noise_threshold)
     processor = ChunkRecordingExecutor(
