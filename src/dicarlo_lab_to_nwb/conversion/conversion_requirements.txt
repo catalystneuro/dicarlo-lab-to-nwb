@@ -1,3 +1,0 @@
-neuroconv @ git+https://github.com/CatalystNeuro/neuroconv@main
-spikeinterface @ git+https://github.com/SpikeInterface/spikeinterface@main
-neo @ git+https://github.com/NeuralEnsemble/python-neo@master

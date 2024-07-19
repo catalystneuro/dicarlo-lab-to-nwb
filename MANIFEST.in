@@ -1,3 +1,7 @@
-include *.yml
-include *.json
-include *.txt
+include src/dicarlo_lab_to_nwb/conversion/metadata.yaml
+include src/dicarlo_lab_to_nwb/conversion/probe_info.csv
+exclude src/dicarlo_lab_to_nwb/conversion/conversion_notes.md
+exclude src/dicarlo_lab_to_nwb/conversion/assets/*
+exclude .pre-commit-config.yaml
+exclude .gitignore
+exclude src/dicarlo_lab_to_nwb/conversion/shocase_notebook.ipynb
