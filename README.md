@@ -23,7 +23,7 @@ cd dicarlo-lab-to-nwb
 pip install -e .
 ```
 
-If you already have the repository cloned, be sure to run the following instructions so you have the latest version of the code:
+If you already have the repository cloned, be sure to run the following instructions in your local copy of the github repository so you have the latest version of the code:
 
 ```bash
 git pull
