@@ -334,7 +334,8 @@ def thresholding_peak_detection(
     job_name = "DiCarloPeakDetectionPipeline"
 
     if job_kwargs is None:
-        job_kwargs = dict(n_jobs=-1, progress_bar=True, chunk_duration=10.0)  # Fixed chunks to 10 seconds
+        progress_bar = verbose
+        job_kwargs = dict(n_jobs=-1, progress_bar=progress_bar, chunk_duration=10.0)  # Fixed chunks to 10 seconds
 
     init_args = (recording, noise_threshold)
     processor = ChunkRecordingExecutor(
@@ -457,7 +458,8 @@ def calculate_thresholding_events_from_nwb(
         duration = _nwb_recording.get_duration() - 1 / sampling_frequency
         end_time = min(10.0, duration)
         nwb_recording = _nwb_recording.time_slice(start_time=0, end_time=end_time)
-        job_kwargs = dict(n_jobs=1, progress_bar=True, chunk_duration=end_time)
+        progress_bar = verbose
+        job_kwargs = dict(n_jobs=1, progress_bar=progress_bar, chunk_duration=end_time)
     else:
         nwb_recording = _nwb_recording
 
