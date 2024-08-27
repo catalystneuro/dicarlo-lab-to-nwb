@@ -1,6 +1,6 @@
 [project]
 name = "dicarlo-lab-to-nwb"
-version = "0.1.1"
+version = "0.1.2"
 description = "NWB conversion scripts, functions, and classes for DiCarlo conversion"
 readme = "README.md"
 authors = [{ name = "Heberto Mayorquin", email = "h.mayorquin@gmail.com" }]
@@ -16,14 +16,12 @@ classifiers = [
 
 
 dependencies = [
-  "neuroconv[video] >= 0.5.0",
-# "spikeinterface >= 0.101.0", Need a new release
-  "spikeinterface==0.101.0rc1",  # Pinning to a specific release candidate
-  "probeinterface >= 0.2.23",
-# "neo>=0.13.2",    # Neeed a new release
-  "neo @ git+https://github.com/NeuralEnsemble/python-neo@master",
+  "neuroconv[video] == 0.5.0",
+  "spikeinterface == 0.101.0",
+  "probeinterface == 0.2.23",
+  "neo==0.13.2",
   "pillow>=10.3.0",
-  "ndx-binned-spikes>=0.1.0",
+  "ndx-binned-spikes==0.1.0",
   "matplotlib",
   "psutil",
   "docker",
