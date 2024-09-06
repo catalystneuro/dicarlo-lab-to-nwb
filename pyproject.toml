@@ -32,11 +32,8 @@ dependencies = [
 Repository = "https://github.com/catalystneuro/dicarlo-lab-to-nwb"
 
 [build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-include-package-data = true
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 
 
