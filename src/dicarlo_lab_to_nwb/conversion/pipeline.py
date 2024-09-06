@@ -531,7 +531,15 @@ def write_thresholding_events_to_nwb(
             "Spike times detected using thresholding with DiCarlo lab pipeline and the following parameters: \n "
             f"{thresholindg_pipeline_kwargs}"
         )
-        add_sorting(nwbfile=nwbfile, sorting=sorting, units_description=units_description)
+
+        number_of_units = sorting.get_num_units()
+        unit_electrode_indices = [[i] for i in range(number_of_units)]
+        add_sorting(
+            nwbfile=nwbfile,
+            sorting=sorting,
+            units_description=units_description,
+            unit_electrode_indices=unit_electrode_indices,
+        )
 
         if append:
             io.write(nwbfile)
