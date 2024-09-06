@@ -250,21 +250,27 @@ def build_psth_from_nwbfile(
     unit_ids = units_data_frame["unit_name"].values
     spike_times = units_data_frame["spike_times"].values
     dict_of_spikes_times = {id: st for id, st in zip(unit_ids, spike_times)}
-    spike_times_list = [spike_times for spike_times in dict_of_spikes_times.values()]
+
+    # For the DiCarlo project it is important that units are sorted by their name (A-001, A-002, ...)
+    unit_ids_sorted = sorted(unit_ids)
+    spike_times_list = [dict_of_spikes_times[id] for id in unit_ids_sorted]
 
     trials_dataframe = nwbfile.trials.to_dataframe()
     stimuli_presentation_times_seconds = trials_dataframe["start_time"]
     stimuli_presentation_id = trials_dataframe["stimulus_presented"]
-    all_stimuli = stimuli_presentation_id.unique()
+    stimuli_ids = stimuli_presentation_id.unique()
+
+    # We also sort the stimuli by their id
+    stimuli_ids_sorted = sorted(stimuli_ids)
 
     stimuli_presentation_times_dict = {
         stimulus_id: stimuli_presentation_times_seconds[stimuli_presentation_id == stimulus_id].values
-        for stimulus_id in all_stimuli
+        for stimulus_id in stimuli_ids_sorted
     }
 
     psth_dict = {}
     desc = "Calculating PSTH for stimuli"
-    for stimuli_id in tqdm(all_stimuli, desc=desc, unit=" stimuli processed", disable=not verbose):
+    for stimuli_id in tqdm(stimuli_ids_sorted, desc=desc, unit=" stimuli processed", disable=not verbose):
         stimulus_presentation_times = stimuli_presentation_times_dict[stimuli_id]
         psth_per_stimuli = calculate_event_psth(
             spike_times_list=spike_times_list,
