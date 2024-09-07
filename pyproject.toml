@@ -21,7 +21,7 @@ dependencies = [
   "probeinterface == 0.2.23",
   "neo==0.13.2",
   "pillow>=10.3.0",
-  "ndx-binned-spikes==0.1.0",
+  "ndx-binned-spikes==0.2.0",
   "matplotlib",
   "psutil",
   "docker",
