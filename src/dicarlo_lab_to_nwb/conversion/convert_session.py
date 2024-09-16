@@ -274,7 +274,7 @@ if __name__ == "__main__":
     # assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
 
     output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = True
+    stub_test = False
     verbose = True
     add_thresholding_events = True
     add_psth = True
