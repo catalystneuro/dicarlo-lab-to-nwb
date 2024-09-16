@@ -284,13 +284,13 @@ def build_psth_from_nwbfile(
     return psth_dict, stimuli_presentation_times_dict
 
 
-def build_binned_spikes_from_nwbfile(
+def build_binned_aligned_spikes_from_nwbfile(
     nwbfile: NWBFile,
     bin_width_in_milliseconds: float,
     number_of_bins: int,
     milliseconds_from_event_to_first_bin: float = 0.0,
     verbose: bool = False,
-) -> dict[BinnedAlignedSpikes]:
+) -> BinnedAlignedSpikes:
     """
     Build `BinnedAlignedSpikes` objects for each stimulus from an NWB file.
 
@@ -331,22 +331,35 @@ def build_binned_spikes_from_nwbfile(
         data=region_indices, table=units_table, description="region of units table", name="units_region"
     )
 
-    binned_spikes_dict = {}
-    for stimulus_id in psth_dict.keys():
-        psth_per_stimuli = psth_dict[stimulus_id]
-        stimulus_presentation_times = stimuli_presentation_times_dict[stimulus_id]
+    event_timestamps = [stimuli_presentation_times_dict[stimulus_id] for stimulus_id in psth_dict.keys()]
+    data = [psth_dict[stimulus_id] for stimulus_id in psth_dict.keys()]
+    condition_labels = [stimulus_id for stimulus_id in psth_dict.keys()]
+    condition_indices = [
+        [index] * len(stimuli_presentation_times_dict[stimulus_id])
+        for index, stimulus_id in enumerate(psth_dict.keys())
+    ]
 
-        binned_aligned_spikes = BinnedAlignedSpikes(
-            name=f"BinnedAlignedSpikesStimulusID{stimulus_id}",
-            data=psth_per_stimuli,
-            event_timestamps=stimulus_presentation_times,
-            bin_width_in_milliseconds=bin_width_in_milliseconds,
-            milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
-            units_region=units_region,
-        )
-        binned_spikes_dict[stimulus_id] = binned_aligned_spikes
+    event_timestamps = np.concatenate(event_timestamps)
+    data = np.concatenate(data, axis=1)  # We concatenate across the events axis
+    condition_indices = np.concatenate(condition_indices)
 
-    return binned_spikes_dict
+    data, event_timestamps, condition_indices = BinnedAlignedSpikes.sort_data_by_event_timestamps(
+        data=data,
+        event_timestamps=event_timestamps,
+        condition_indices=condition_indices,
+    )
+
+    binned_aligned_spikes = BinnedAlignedSpikes(
+        name=f"BinnedAlignedSpikesToStimulus",
+        data=data,
+        event_timestamps=event_timestamps,
+        condition_labels=condition_labels,
+        bin_width_in_milliseconds=bin_width_in_milliseconds,
+        milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        units_region=units_region,
+    )
+
+    return binned_aligned_spikes
 
 
 def write_binned_spikes_to_nwbfile(
@@ -385,7 +398,7 @@ def write_binned_spikes_to_nwbfile(
     with NWBHDF5IO(nwbfile_path, mode=mode) as io:
         nwbfile = io.read()
 
-        binned_spikes_dict = build_binned_spikes_from_nwbfile(
+        binned_aligned_spikes = build_binned_aligned_spikes_from_nwbfile(
             nwbfile=nwbfile,
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             number_of_bins=number_of_bins,
@@ -398,9 +411,7 @@ def write_binned_spikes_to_nwbfile(
             description="Intermediate data derived from extracellular electrophysiology recordings such as PSTHs.",
         )
 
-        for stimulus_id in binned_spikes_dict.keys():
-            binned_aligned_spikes = binned_spikes_dict[stimulus_id]
-            ecephys_processing_module.add(binned_aligned_spikes)
+        ecephys_processing_module.add(binned_aligned_spikes)
 
         if append:
             io.write(nwbfile)
