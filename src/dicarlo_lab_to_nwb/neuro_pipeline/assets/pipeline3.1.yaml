@@ -1,0 +1,9 @@
+pipeline:
+  version: pipeline3.1
+  description: spike-thresholding pipeline for the DiCarlo lab
+  thresholding:
+    f_notch: 60.0     # Frequency for the notch filter
+    bandwidth: 10.0   # Bandwidth for the notch filter
+    f_low: 300.0      # Low cutoff frequency for the bandpass filter
+    f_high: 6000.0    # High cutoff frequency for the bandpass filter
+    noise_threshold: 3.0  # Threshold w.r.t. the noise level (SD) for spike detection

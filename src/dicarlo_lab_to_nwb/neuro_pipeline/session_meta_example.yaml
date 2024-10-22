@@ -1,0 +1,18 @@
+session:
+  project: MonkeyValence
+  date: 20240924
+  subject: Apollo
+  data_folder: /Users/yoon/raw_data/ # this is the root folder where all the raw data resides for the pipeline
+  output_folder: /Users/yoon/Downloads/
+  version: pipeline3.1
+  stimulus_sets: # please list stimulus sets in the order of recordings performed on this day
+    - name: normalizers
+      stimulus_folder: /Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/stimuli/RSVP-normalizers-v3/images
+      behavior_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/normalizers_240924_123021
+      version: normalizers.V3
+      notes: n/a (in case there were any noteworthy events that happened during the experiment)
+    - name: normalizers
+      stimulus_folder: /Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/stimuli/RSVP-normalizers-v3/images
+      behavior_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/normalizers_240924_151135
+      version: normalizers.V3
+      notes: n/a
