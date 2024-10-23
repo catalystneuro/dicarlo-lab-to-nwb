@@ -1,0 +1,65 @@
+pipeline:
+  version: 3.1
+  description: spike-thresholding pipeline for the DiCarlo lab
+  thresholding:
+    f_notch: 60.0     # Frequency for the notch filter
+    bandwidth: 10.0   # Bandwidth for the notch filter
+    f_low: 300.0      # Low cutoff frequency for the bandpass filter
+    f_high: 6000.0    # High cutoff frequency for the bandpass filter
+    noise_threshold: 3.0  # Threshold w.r.t. the noise level (SD) for spike detection
+
+subject:
+  name: pico
+  date_of_birth: 2014-06-22 00:00:00-04:00
+  sex: M
+  species: Macaca mulatta
+  notes: monkey
+
+experiment:
+  mworks_version: mwk_rsvp_3.1
+  paradigm: RSVP
+  task: passive fixation
+  brain_region: aIT, cIT, pIT
+  electrode: Utah array
+  surgery: 3x Utah Array Implant + Headpost
+  
+lab_info:
+  university: Massachusetts Institute of Technology
+  institution: McGovern Institute for Brain Research
+  lab: DiCarlo
+  experimenter: Ani Ayvazian-Hancock
+
+hardware:
+  electrode_name: Electrode
+  electrode_description: Utah CerePort Array with a single electrode array
+  electrode_manuf: 2020 Blackrock Microsystems, LLC
+  system_name: RecordingSystem
+  system_description: RHD Recording System
+  system_manuf: 2010-2023 Intan Technologies
+  adapter_name: Utah Array Pedestal Connector
+  adapter_description: Connects Utah Pedestal to Intan RHD Recording System
+  adapter_manuf: Ripple Neuro
+  photodiode_name: DET36A2 Biased Si Detector
+  photodiode_description: Photodiode for detecting image presentation times. Comes
+  with DET2A Power Adapter
+  photodiode_manuf: Thorlabs Inc.
+  monitor_name: LG UltraGear
+  monitor_description: LG 32GP850-B 32 UltraGear QHD (2560 x 1440) and color-calibrated
+  eye_tracker: Eyelink 1000 Plus
+
+software:
+  mworks_version: Version 0.13
+  OS: macOS Ventura on MAC Studio (2023)
+  intan_version: Version 3.1.0
+
+
+project: 
+  name: oasis900
+  sessions:
+    dates: 2024-02-01, 2024-02-03
+    nreps: 30, 30
+  ntotal: 900
+  stimulus_type: image
+  stimulus_size_deg: 8
+  on_time_ms: 100
+  off_time_ms: 100

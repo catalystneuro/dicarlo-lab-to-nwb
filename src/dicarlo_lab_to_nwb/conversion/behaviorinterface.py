@@ -33,8 +33,8 @@ class BehavioralTrialsInterface(BaseDataInterface):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
-        ground_truth_time_column = "samp_on_us"
-        mwkorks_df["start_time"] = mwkorks_df[ground_truth_time_column] / 1e6
+        ground_truth_time_column = "samp_on_us" # TODO: expose this as a parameter
+        mwkorks_df["start_time"] = mwkorks_df[ground_truth_time_column] / 1e6 # TODO: convert to seconds
         mwkorks_df["stimuli_presentation_time_ms"] = mwkorks_df["stim_on_time_ms"]
         mwkorks_df["inter_stimuli_interval_ms"] = mwkorks_df["stim_off_time_ms"]
         mwkorks_df["stop_time"] = mwkorks_df["start_time"] + mwkorks_df["stimuli_presentation_time_ms"] / 1e3
@@ -46,6 +46,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
             .cumsum()
         )
 
+        # TODO: add columns for size, hash, etc to descriptions
         descriptions = {
             "stimuli_presentation_time_ms": "Duration of the stimulus presentation in milliseconds",
             "inter_stimuli_interval_ms": "Inter stimulus interval in milliseconds",
@@ -72,3 +73,6 @@ class BehavioralTrialsInterface(BaseDataInterface):
         # Extract a pandas dictionary with each row of the columns_to_write
         for _, row in mwkorks_df[columns_to_write].iterrows():
             nwbfile.add_trial(**row.to_dict())
+
+        pixel_hash = mwkorks_df.to_dict(orient="hash")
+        nwbfile.add_trial_column(name="hash", data=pixel_hash, description='Hash of the image')

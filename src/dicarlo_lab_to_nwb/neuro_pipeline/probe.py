@@ -220,6 +220,10 @@ def attach_probe_to_recording(recording: IntanRecordingExtractor, probe_info_pat
     probe_names = [number_to_probe_name[int(group_name)] for group_name in group_numbers]
     recording.set_property("probe", probe_names)
 
+    # TODO: This is hardcoded for now. We should add a way to specify the brain regions
+    brain_regions = ["aIT", "cIT", "pIT"] # repeat the same brain region for all channels
+    recording.set_property("location", brain_regions)
+
     # This is redundant but adding here to shield this pipeline from changes in the spikeinterface and neo API
     available_properties = recording.get_property_keys()
     if "channel_names" not in available_properties:
