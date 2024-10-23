@@ -85,7 +85,8 @@ def convert_session_to_nwb(
             file_path=mworks_processed_file_path,
             folder_path=stimuli_folder,
             image_set_name=image_set_name,
-            video_copy_path=output_dir_path / "videos",
+            # video_copy_path=output_dir_path / "videos",
+            video_copy_path=None,  # Add a path if videos should be copied
             verbose=verbose,
         )
     else:

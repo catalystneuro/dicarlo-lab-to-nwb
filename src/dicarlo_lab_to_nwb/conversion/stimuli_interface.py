@@ -131,7 +131,7 @@ class StimuliVideoInterface(BaseDataInterface):
 
         stimuli_presented = mwkorks_df.stimulus_presented.values
 
-        file_path_list = [self.stimuli_folder / f"{stimuli_number + 1}.mp4" for stimuli_number in stimuli_presented]
+        file_path_list = [self.stimuli_folder / f"{stimuli_number}.mp4" for stimuli_number in stimuli_presented]
         missing_file_path = [file_path for file_path in file_path_list if not file_path.is_file()]
         assert len(missing_file_path) == 0, f"Missing files: {missing_file_path}"
 
