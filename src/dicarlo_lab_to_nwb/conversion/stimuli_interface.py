@@ -41,11 +41,21 @@ class StimuliImagesInterface(BaseDataInterface):
 
         return metadata
 
-    def add_to_nwbfile(self, nwbfile: NWBFile, metadata: dict):
+    def add_to_nwbfile(
+        self,
+        nwbfile: NWBFile,
+        metadata: dict,
+        stub_test: bool = False,
+        ground_truth_time_column: str = "samp_on_us",
+    ):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
-        ground_truth_time_column = "samp_on_us"
+        if stub_test:
+            mwkorks_df = mwkorks_df.iloc[:100]
+
+        columns = mwkorks_df.columns
+        assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
         image_presentation_time_seconds = mwkorks_df[ground_truth_time_column] / 1e6
         stimulus_ids = mwkorks_df["stimulus_presented"]
 
@@ -122,16 +132,26 @@ class StimuliVideoInterface(BaseDataInterface):
 
         self.verbose = verbose
 
-    def add_to_nwbfile(self, nwbfile: NWBFile, metadata: dict):
+    def add_to_nwbfile(
+        self,
+        nwbfile: NWBFile,
+        metadata: dict,
+        stub_test: bool = False,
+        ground_truth_time_column: str = "samp_on_us",
+    ):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
-        ground_truth_time_column = "samp_on_us"
-        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column].values / 1e6
+        if stub_test:
+            mwkorks_df = mwkorks_df.iloc[:100]
 
+        columns = mwkorks_df.columns
+        assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
+
+        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column].values / 1e6
         stimuli_presented = mwkorks_df.stimulus_presented.values
 
-        file_path_list = [self.stimuli_folder / f"{stimuli_number + 1}.mp4" for stimuli_number in stimuli_presented]
+        file_path_list = [self.stimuli_folder / f"{stimuli_number}.mp4" for stimuli_number in stimuli_presented]
         missing_file_path = [file_path for file_path in file_path_list if not file_path.is_file()]
         assert len(missing_file_path) == 0, f"Missing files: {missing_file_path}"
 

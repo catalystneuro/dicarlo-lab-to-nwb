@@ -39,6 +39,7 @@ def convert_session_to_nwb(
     stimuli_are_video: bool = False,
     thresholindg_pipeline_kwargs: dict = None,
     psth_kwargs: dict = None,
+    ground_truth_time_column: str = "samp_on_us",
 ):
     if verbose:
         total_start = time.time()
@@ -47,18 +48,22 @@ def convert_session_to_nwb(
     if output_dir_path is None:
         output_dir_path = Path.home() / "conversion_nwb"
 
-    image_set_name = session_metadata["image_set_name"]
+    project_name = session_metadata["project_name"]
     session_date = session_metadata["session_date"]
     session_time = session_metadata["session_time"]
     subject = session_metadata["subject"]
+    type_of_data = session_metadata.get("type_of_data", "")
 
     output_dir_path = Path(output_dir_path)
     if stub_test:
         output_dir_path = output_dir_path / "nwb_stub"
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    session_id = f"{subject}_{session_date}_{session_time}"
+    session_id = f"{subject}_{project_name}_tresholded_{session_date}_{session_time}_{type_of_data}"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
+
+    if verbose:
+        print(f"Converting session: {session_id}")
 
     conversion_options = dict()
 
@@ -84,18 +89,20 @@ def convert_session_to_nwb(
         stimuli_interface = StimuliVideoInterface(
             file_path=mworks_processed_file_path,
             folder_path=stimuli_folder,
-            image_set_name=image_set_name,
-            video_copy_path=output_dir_path / "videos",
+            image_set_name=project_name,
+            # video_copy_path=output_dir_path / "videos",
+            video_copy_path=None,  # Add a path if videos should be copied
             verbose=verbose,
         )
     else:
         stimuli_interface = StimuliImagesInterface(
             file_path=mworks_processed_file_path,
             folder_path=stimuli_folder,
-            image_set_name=image_set_name,
+            image_set_name=project_name,
             verbose=verbose,
         )
 
+    conversion_options["Stimuli"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
     # Build the converter pipe with the previously defined data interfaces
     data_interfaces_dict = {
         "Recording": intan_recording_interface,
@@ -112,6 +119,7 @@ def convert_session_to_nwb(
     # Add datetime to conversion
     metadata = converter_pipe.get_metadata()
     metadata["NWBFile"]["session_start_time"] = session_start_time
+    metadata["session_id"] = session_id
 
     # Update default metadata with the editable in the corresponding yaml file
     editable_metadata_path = Path(__file__).parent / "metadata.yaml"
@@ -222,86 +230,3 @@ def convert_session_to_nwb(
             print(f"Total script took {total_scrip_time / 60:.2f} minutes")
         else:
             print(f"Total script took {total_scrip_time / 60 / 60:.2f} hours")
-
-
-if __name__ == "__main__":
-
-    image_set_name = "domain-transfer-2023"
-    subject = "pico"
-    session_date = "20230215"
-    session_time = "161322"
-
-    # This one has a jump in time
-    session_date = "20230214"
-    session_time = "140610"
-
-    # Third one
-    # session_date = "20230216"
-    # session_time = "150919"
-
-    # Fourth one
-    # session_date = "20230221"
-    # session_time = "130510"
-
-    # Video one (does not have intan)
-    # image_set_name = "Co3D"
-    # subject = "pico"
-    # session_date = "230627"
-    # session_time = "114317"
-
-    data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
-    assert data_folder.is_dir(), f"Data directory not found: {data_folder}"
-
-    session_metadata = {
-        "image_set_name": image_set_name,
-        "session_date": session_date,
-        "session_time": session_time,
-        "subject": subject,
-    }
-
-    intan_file_path = locate_intan_file_path(data_folder=data_folder, **session_metadata)
-
-    mworks_processed_file_path = locate_mworks_processed_file_path(
-        data_folder=data_folder,
-        image_set_name=image_set_name,
-        subject=subject,
-        session_date=session_date,
-        session_time=session_time,
-    )
-
-    stimuli_folder = data_folder / "StimulusSets" / "RSVP-domain_transfer" / "images"
-    # stimuli_folder = data_folder / "StimulusSets" / "Co3D" / "videos_mworks"
-    # assert stimuli_folder.is_dir(), f"Stimuli folder not found: {stimuli_folder}"
-
-    output_dir_path = Path.home() / "conversion_nwb"
-    stub_test = True
-    verbose = True
-    add_thresholding_events = True
-    add_psth = True
-
-    thresholindg_pipeline_kwargs = {
-        "f_notch": 60.0,  # Frequency for the notch filter
-        "bandwidth": 10.0,  # Bandwidth for the notch filter
-        "f_low": 300.0,  # Low cutoff frequency for the bandpass filter
-        "f_high": 6000.0,  # High cutoff frequency for the bandpass filter
-        "noise_threshold": 3,  # Threshold for detection in the thresholding algorithm
-    }
-
-    # Ten bins starting 200 ms before the stimulus and spanning 400 ms
-    psth_kwargs = {"bins_span_milliseconds": 400, "num_bins": 10, "milliseconds_from_event_to_first_bin": -200.0}
-
-    from dicarlo_lab_to_nwb.conversion.convert_session import convert_session_to_nwb
-
-    convert_session_to_nwb(
-        session_metadata=session_metadata,
-        intan_file_path=intan_file_path,
-        mworks_processed_file_path=mworks_processed_file_path,
-        stimuli_folder=stimuli_folder,
-        thresholindg_pipeline_kwargs=thresholindg_pipeline_kwargs,
-        psth_kwargs=psth_kwargs,
-        output_dir_path=output_dir_path,
-        stub_test=stub_test,
-        verbose=verbose,
-        add_thresholding_events=add_thresholding_events,
-        add_psth=add_psth,
-    )
