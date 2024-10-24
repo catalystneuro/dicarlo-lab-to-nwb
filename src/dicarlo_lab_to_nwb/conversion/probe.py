@@ -1,8 +1,42 @@
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
+from neuroconv.basedatainterface import BaseDataInterface
+from neuroconv.tools.spikeinterface import add_electrodes_to_nwbfile
 from probeinterface import Probe, ProbeGroup
+from pynwb.file import NWBFile
+from spikeinterface.core import generate_recording
 from spikeinterface.extractors import IntanRecordingExtractor
+
+
+class UtahArrayProbeInterface(BaseDataInterface):
+
+    def __init__(self, file_path: Optional[str | Path] = None):
+
+        probe_info_path = file_path
+        if probe_info_path is None:
+            probe_info_path = _fetch_default_probe_info_path()
+        self.probe_info_path = probe_info_path
+
+        super().__init__()
+
+    def add_to_nwbfile(self, nwbfile: NWBFile, metadata: Optional[dict] = None):
+
+        probe_info_df = pd.read_csv(filepath_or_buffer=self.probe_info_path)
+        channel_ids = probe_info_df["Intan"].values
+        channel_ids.sort()
+        channel_ids = channel_ids.tolist()
+        number_of_channels = len(channel_ids)
+        dummy_recording = generate_recording(durations=[0], num_channels=number_of_channels)
+        dummy_recording = dummy_recording.rename_channels(new_channel_ids=channel_ids)
+
+        attach_probe_to_recording(recording=dummy_recording, probe_info_path=self.probe_info_path)
+
+        contact_vector = dummy_recording.get_property("contact_vector")
+        brain_area = contact_vector["brain_area"].astype("str")
+        dummy_recording.set_property(key="brain_area", values=brain_area)
+        add_electrodes_to_nwbfile(nwbfile=nwbfile, recording=dummy_recording, metadata=metadata)
 
 
 def add_geometry_to_probe_data_frame(probe_info_df: pd.DataFrame) -> pd.DataFrame:
@@ -184,6 +218,9 @@ def build_probe_group(recording: IntanRecordingExtractor, probe_info_path: str |
         probe.create_auto_shape(probe_type="rect", margin=margin_um)
         probe.set_device_channel_indices(probe_group_df["digital_channel_index"].values)
 
+        brain_area = probe_group_df["brain_area"].values
+        probe.annotate_contacts(brain_area=brain_area)
+
         probe_group.add_probe(probe)
 
     return probe_group
@@ -237,14 +274,21 @@ def _fetch_default_probe_info_path() -> Path:
 
     The format of the file is as follows:
 
-    | Intan | Connector |  | Array | Bank | elec | label | col | row | probe_group |
-    |-------|-----------|--|-------|------|------|-------|-----|-----|-------------|
-    | C-008 | C         |31| 1     | C    | 31   | elec1 | 9   | 1   | ABC         |
-    | A-007 | A         |32| 2     | A    | 32   | elec2 | 9   | 2   | ABC         |
-    | A-006 | A         |30| 3     | A    | 30   | elec3 | 9   | 3   | ABC         |
-    | A-005 | A         |28| 4     | A    | 28   | elec4 | 9   | 4   | ABC         |
-    | A-004 | A         |26| 5     | A    | 26   | elec5 | 9   | 5   | ABC         |
-    | A-003 | A         |24| 6     | A    | 24   | elec6 | 9   | 6   | ABC         |
+    | Intan | Connector |  | Array | Bank | elec | label | col | row | probe_group | brain_area |
+    |-------|-----------|--|-------|------|------|-------|-----|-----|-------------|------------|
+    | C-008 | C         |31| 1     | C    | 31   | elec1 | 9   | 1   | ABC         | V1         |
+    | A-007 | A         |32| 2     | A    | 32   | elec2 | 9   | 2   | ABC         | V1         |
+    | A-006 | A         |30| 3     | A    | 30   | elec3 | 9   | 3   | ABC         | V1         |
+    | A-005 | A         |28| 4     | A    | 28   | elec4 | 9   | 4   | ABC         | V1         |
+    | A-004 | A         |26| 5     | A    | 26   | elec5 | 9   | 5   | ABC         | V1         |
+    | A-003 | A         |24| 6     | A    | 24   | elec6 | 9   | 6   | ABC         | V1         |
+    | A-002 | A         |22| 7     | A    | 22   | elec7 | 9   | 7   | ABC         | V1         |
+    | B-008 | B         |18| 9     | B    | 18   | elec9 | 8   | 1   | ABC         | V1         |
+    | B-007 | B         |16| 10    | B    | 16   | elec10| 8   | 2   | ABC         | V1         |
+    | B-001 | B         |4 | 16    | B    | 4    | elec16| 8   | 8   | ABC         | V1         |
+    | C-007 | C         |2 | 17    | C    | 2    | elec17| 7   | 1   | ABC         | V1         |
+    | C-006 | C         |0 | 18    | C    | 0    | elec18| 7   | 2   | ABC         | V1         |
+    | C-005 | C         |31| 19    | C    | 31   | elec19| 7   | 3   | ABC         | V1         |
 
     By default the data is packed together with the dicarlo-lab-to-nwb repository and should
     not require any additional setup.

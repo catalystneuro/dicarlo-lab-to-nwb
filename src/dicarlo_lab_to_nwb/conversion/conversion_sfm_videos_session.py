@@ -11,13 +11,15 @@ assert stimulus_data_folder_path.exists(), f"{stimulus_data_folder_path} does no
 
 session_date = "20240715"
 subject = "Apollo"  # Confirm this?
+pipeline_version = "DiLorean"
 
-output_dir_path = Path.home() / "conversion_nwb"
+output_dir_path = data_folder / "nwb_files"
 stub_test = True
 verbose = True
 add_thresholding_events = True
 add_psth = True
 stimuli_are_video = True
+add_raw_amplifier_data = False
 
 thresholindg_pipeline_kwargs = {
     "f_notch": 60.0,  # Frequency for the notch filter
@@ -60,6 +62,7 @@ for folder_with_data_path in folder_paths_to_convert:
         "session_time": session_time,
         "subject": subject,
         "type_of_data": type_of_data,
+        "pipeline_version": pipeline_version,
     }
 
     convert_session_to_nwb(
@@ -76,4 +79,5 @@ for folder_with_data_path in folder_paths_to_convert:
         add_psth=add_psth,
         stimuli_are_video=stimuli_are_video,
         ground_truth_time_column=ground_truth_time_column,
+        add_raw_amplifier_data=add_raw_amplifier_data,
     )

@@ -1,8 +1,9 @@
 import math
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
-from neuroconv.tools.spikeinterface import add_sorting
+from neuroconv.tools.spikeinterface import add_sorting_to_nwbfile
 from pynwb import NWBHDF5IO
 from scipy.signal import ellip, filtfilt
 from spikeinterface.core import (
@@ -12,12 +13,14 @@ from spikeinterface.core import (
     NumpySorting,
     aggregate_units,
 )
-from spikeinterface.extractors import NwbRecordingExtractor
+from spikeinterface.extractors import IntanRecordingExtractor, NwbRecordingExtractor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
     BasePreprocessor,
     BasePreprocessorSegment,
 )
+
+from .probe import attach_probe_to_recording
 
 
 def bandpass_filter(signal, f_sampling, f_low, f_high):
@@ -394,8 +397,8 @@ def thresholding_pipeline(
     return spike_times_per_channel
 
 
-def calculate_thresholding_events_from_nwb(
-    nwbfile_path: Path | str,
+def calculate_thresholding_events(
+    file_path: Path | str,
     f_notch: float = 60.0,
     bandwidth: float = 10,
     f_low: float = 300.0,
@@ -405,71 +408,86 @@ def calculate_thresholding_events_from_nwb(
     job_kwargs: dict = None,
     stub_test: bool = False,
     verbose: bool = False,
+    probe_info_path: Optional[Path | str] = None,
 ) -> BaseSorting:
     """
-    Extracts spike events from an NWB file using a thresholding pipeline and returns the sorted spike times.
+    Extracts spike events from neural recordings using a thresholding pipeline and returns the sorted spike times.
+    Supports both Intan (.rhd) and NWB file formats.
 
     Parameters
     ----------
-    nwbfile_path : Path or str
-        Path to the NWB file containing the neural recordings.
+    file_path : Path or str
+        Path to the recording file (.rhd for Intan or .nwb for NWB format)
     f_notch : float, optional
-        Notch filter frequency to remove power line noise, by default 60.0 Hz.
+        Notch filter frequency to remove power line noise, by default 60.0 Hz
     bandwidth : float, optional
-        Bandwidth for the notch filter, by default 10 Hz.
+        Bandwidth for the notch filter, by default 10 Hz
     f_low : float, optional
-        Low cutoff frequency for bandpass filtering, by default 300.0 Hz.
+        Low cutoff frequency for bandpass filtering, by default 300.0 Hz
     f_high : float, optional
-        High cutoff frequency for bandpass filtering, by default 6000.0 Hz.
+        High cutoff frequency for bandpass filtering, by default 6000.0 Hz
     noise_threshold : float, optional
-        Threshold for detecting spikes, by default 3.
+        Threshold for detecting spikes, by default 3
     vectorized : bool, optional
-        Whether to use a vectorized implementation of the thresholding, by default True.
+        Whether to use a vectorized implementation of the thresholding, by default True
     job_kwargs : dict, optional
-        Additional keyword arguments for job control, such as chunk size by default None.
+        Additional keyword arguments for job control, such as chunk size, by default None
     stub_test : bool, optional
-        Whether to run a short test on the first 10 seconds of the recording, by default False. This is
-        used for testing the pipeline.
+        Whether to run a short test on the first 10 seconds of the recording, by default False
     verbose : bool, optional
-        Whether to print progress messages, by default False.
+        Whether to print progress messages, by default False
+    probe_info_path : Path | str, optional
+        Path to the CSV file containing probe information. Only used for Intan recordings.
+        If not provided for Intan recordings, the default path is used. see `attach_probe_to_recording` documentation.
 
     Returns
     -------
     BaseSorting
-        An object containing the sorted spike times and related metadata.
-
-    Raises
-    ------
-    AssertionError
-        If the NWB file does not exist at the specified path.
+        An object containing the sorted spike times and related metadata
 
     Notes
     -----
-    This function reads an NWB file, applies filtering and thresholding to detect spike events, and returns the
-    detected spike times. The processing is done separately for each probe in the recording.
+    This function automatically detects the file format from the extension and applies the appropriate loading method.
+    It applies filtering and thresholding to detect spike events, processing each probe separately.
+    The processing pipeline includes:
+    1. Loading the recording
+    2. Applying notch and bandpass filters
+    3. Detecting spikes using threshold crossing
+    4. Organizing results by probe and channel
     """
-    nwbfile_path = Path(nwbfile_path)
-    assert nwbfile_path.is_file(), f"{nwbfile_path} does not exist"
+    file_path = Path(file_path)
+    assert file_path.is_file(), f"{file_path} does not exist"
 
-    _nwb_recording = NwbRecordingExtractor(file_path=nwbfile_path, use_pynwb=True)
-    sampling_frequency = _nwb_recording.get_sampling_frequency()
+    # Initialize recording based on file extension
+    if file_path.suffix.lower() == ".rhd":
+        # Always use amplifier channels for Intan recordings
+        stream_name = "RHD2000 amplifier channel"
+        recording = IntanRecordingExtractor(file_path=file_path, ignore_integrity_checks=True, stream_name=stream_name)
+        attach_probe_to_recording(recording=recording, probe_info_path=probe_info_path)
+    else:  # .nwb
+        recording = NwbRecordingExtractor(file_path=file_path, use_pynwb=True)
 
+    sampling_frequency = recording.get_sampling_frequency()
+
+    # Handle stub test case
     if stub_test:
-        duration = _nwb_recording.get_duration() - 1 / sampling_frequency
+        duration = recording.get_duration() - 1 / sampling_frequency
         end_time = min(10.0, duration)
-        nwb_recording = _nwb_recording.time_slice(start_time=0, end_time=end_time)
+        processed_recording = recording.time_slice(start_time=0, end_time=end_time)
         progress_bar = verbose
         job_kwargs = dict(n_jobs=1, progress_bar=progress_bar, chunk_duration=end_time)
     else:
-        nwb_recording = _nwb_recording
+        processed_recording = recording
 
-    dict_of_recordings = nwb_recording.split_by(property="probe", outputs="dict")
+    # Process each probe
+    dict_of_recordings = processed_recording.split_by(property="probe", outputs="dict")
     dict_of_spikes_times_per_channel = {}
 
     for probe_name, probe_recording in dict_of_recordings.items():
         if verbose:
             print(f"Calculating thresholding events for probe {probe_name}")
             print(probe_recording)
+
         spikes_times_per_channel = thresholding_pipeline(
             recording=probe_recording,
             f_notch=f_notch,
@@ -484,18 +502,21 @@ def calculate_thresholding_events_from_nwb(
 
         dict_of_spikes_times_per_channel[probe_name] = spikes_times_per_channel
 
-    channel_locations = nwb_recording.get_channel_locations()
-
+    # Build sorting output
+    channel_locations = processed_recording.get_channel_locations()
     sorting_list = []
+
     for probe_name, spikes_times_per_channel in dict_of_spikes_times_per_channel.items():
         spike_frames_per_channel = {
             channel_id: (times * sampling_frequency).round().astype("uint")
             for channel_id, times in spikes_times_per_channel.items()
         }
         probe_sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
+
         if verbose:
             print(f"Building sorting object for probe {probe_name}")
             print(probe_sorting)
+
         num_units = len(probe_sorting.get_unit_ids())
         values = [probe_name] * num_units
         probe_sorting.set_property(key="probe", values=values)
@@ -503,13 +524,15 @@ def calculate_thresholding_events_from_nwb(
 
     sorting = aggregate_units(sorting_list=sorting_list)
 
-    # Aggregate sorting does not preserve ids
-    channel_ids = nwb_recording.get_channel_ids()
+    # Preserve channel IDs and locations
+    channel_ids = processed_recording.get_channel_ids()
     sorting = sorting.rename_units(new_unit_ids=channel_ids)
     sorting.set_property(key="unit_location_um", values=channel_locations)
 
-    del _nwb_recording
-    del nwb_recording
+    # Clean up
+    del recording
+    if "processed_recording" in locals():
+        del processed_recording
 
     return sorting
 
@@ -534,7 +557,7 @@ def write_thresholding_events_to_nwb(
 
         number_of_units = sorting.get_num_units()
         unit_electrode_indices = [[i] for i in range(number_of_units)]
-        add_sorting(
+        add_sorting_to_nwbfile(
             nwbfile=nwbfile,
             sorting=sorting,
             units_description=units_description,
