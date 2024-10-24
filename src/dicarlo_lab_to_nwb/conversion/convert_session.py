@@ -11,7 +11,7 @@ from neuroconv.utils import dict_deep_update, load_dict_from_file
 
 from dicarlo_lab_to_nwb.conversion.behaviorinterface import BehavioralTrialsInterface
 from dicarlo_lab_to_nwb.conversion.pipeline import (
-    calculate_thresholding_events_from_nwb,
+    calculate_thresholding_events,
     write_thresholding_events_to_nwb,
 )
 from dicarlo_lab_to_nwb.conversion.probe import (
@@ -39,7 +39,8 @@ def convert_session_to_nwb(
     thresholindg_pipeline_kwargs: dict = None,
     psth_kwargs: dict = None,
     ground_truth_time_column: str = "samp_on_us",
-    add_raw_ecephys_data: bool = True,
+    add_raw_amplifier_data: bool = False,
+    probe_info_path: str | Path | None = None,
 ):
     if verbose:
         total_start = time.time()
@@ -53,6 +54,7 @@ def convert_session_to_nwb(
     session_time = session_metadata["session_time"]
     subject = session_metadata["subject"]
     type_of_data = session_metadata.get("type_of_data", "")
+    pipeline_version = session_metadata.get("pipeline_version", "")
 
     output_dir_path = Path(output_dir_path)
     if stub_test:
@@ -63,6 +65,9 @@ def convert_session_to_nwb(
     session_id = f"{subject}_{project_name}_tresholded_{session_date}_{session_time}"
     if type_of_data:
         session_id += f"_{type_of_data}"
+    if pipeline_version:
+        session_id += f"_{pipeline_version}"
+
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
     if verbose:
@@ -70,7 +75,7 @@ def convert_session_to_nwb(
 
     conversion_options = dict()
 
-    if add_raw_ecephys_data:
+    if add_raw_amplifier_data:
         ecephys_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
         attach_probe_to_recording(recording=ecephys_interface.recording_extractor)
         if stub_test:
@@ -86,7 +91,7 @@ def convert_session_to_nwb(
     else:
         # This path adds the geometry of the probe as the electrodes table so the units can be linked
         # Add Utah Array Probe Interface, pass a path if a different geometry is used
-        ecephys_interface = UtahArrayProbeInterface(file_path=None)
+        ecephys_interface = UtahArrayProbeInterface(file_path=probe_info_path)
 
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
@@ -168,8 +173,13 @@ def convert_session_to_nwb(
         noise_threshold = thresholindg_pipeline_kwargs.get("noise_threshold", None)
         job_kwargs = thresholindg_pipeline_kwargs.get("job_kwargs", None)
 
-        sorting = calculate_thresholding_events_from_nwb(
-            nwbfile_path=nwbfile_path,
+        if add_raw_amplifier_data:
+            file_path = nwbfile_path
+        else:
+            file_path = intan_file_path
+
+        sorting = calculate_thresholding_events(
+            file_path=file_path,
             f_notch=f_notch,
             bandwidth=bandwidth,
             f_low=f_low,
@@ -178,7 +188,9 @@ def convert_session_to_nwb(
             job_kwargs=job_kwargs,
             stub_test=stub_test,
             verbose=verbose,
+            probe_info_path=probe_info_path,
         )
+
         nwbfile_path = write_thresholding_events_to_nwb(
             sorting=sorting,
             nwbfile_path=nwbfile_path,
@@ -237,3 +249,5 @@ def convert_session_to_nwb(
             print(f"Total script took {total_scrip_time / 60:.2f} minutes")
         else:
             print(f"Total script took {total_scrip_time / 60 / 60:.2f} hours")
+
+        print("\n \n \n")
