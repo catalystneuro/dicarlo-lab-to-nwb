@@ -10,15 +10,14 @@ from neuroconv.datainterfaces import IntanRecordingInterface
 from neuroconv.utils import dict_deep_update, load_dict_from_file
 
 from dicarlo_lab_to_nwb.conversion.behaviorinterface import BehavioralTrialsInterface
-from dicarlo_lab_to_nwb.conversion.data_locator import (
-    locate_intan_file_path,
-    locate_mworks_processed_file_path,
-)
 from dicarlo_lab_to_nwb.conversion.pipeline import (
     calculate_thresholding_events_from_nwb,
     write_thresholding_events_to_nwb,
 )
-from dicarlo_lab_to_nwb.conversion.probe import attach_probe_to_recording
+from dicarlo_lab_to_nwb.conversion.probe import (
+    UtahArrayProbeInterface,
+    attach_probe_to_recording,
+)
 from dicarlo_lab_to_nwb.conversion.psth import write_binned_spikes_to_nwbfile
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     StimuliImagesInterface,
@@ -40,6 +39,7 @@ def convert_session_to_nwb(
     thresholindg_pipeline_kwargs: dict = None,
     psth_kwargs: dict = None,
     ground_truth_time_column: str = "samp_on_us",
+    add_raw_ecephys_data: bool = True,
 ):
     if verbose:
         total_start = time.time()
@@ -59,7 +59,10 @@ def convert_session_to_nwb(
         output_dir_path = output_dir_path / "nwb_stub"
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    session_id = f"{subject}_{project_name}_tresholded_{session_date}_{session_time}_{type_of_data}"
+    # Set the file name for the NWB file
+    session_id = f"{subject}_{project_name}_tresholded_{session_date}_{session_time}"
+    if type_of_data:
+        session_id += f"_{type_of_data}"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
     if verbose:
@@ -67,19 +70,23 @@ def convert_session_to_nwb(
 
     conversion_options = dict()
 
-    # Add Intan Interface
-    intan_recording_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
-    attach_probe_to_recording(recording=intan_recording_interface.recording_extractor)
-    if stub_test:
-        intan_recording = intan_recording_interface.recording_extractor
-        duration = intan_recording.get_duration()
-        end_time = min(10.0, duration)
-        stubed_recording = intan_recording_interface.recording_extractor.time_slice(start_time=0, end_time=end_time)
-        intan_recording_interface.recording_extractor = stubed_recording
+    if add_raw_ecephys_data:
+        ecephys_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
+        attach_probe_to_recording(recording=ecephys_interface.recording_extractor)
+        if stub_test:
+            intan_recording = ecephys_interface.recording_extractor
+            duration = intan_recording.get_duration()
+            end_time = min(10.0, duration)
+            stubed_recording = ecephys_interface.recording_extractor.time_slice(start_time=0, end_time=end_time)
+            ecephys_interface.recording_extractor = stubed_recording
 
-    conversion_options["Recording"] = dict(
-        iterator_opts={"display_progress": True, "buffer_gb": 5},
-    )
+        conversion_options["Ecephys"] = dict(
+            iterator_opts={"display_progress": True, "buffer_gb": 5},
+        )
+    else:
+        # This path adds the geometry of the probe as the electrodes table so the units can be linked
+        # Add Utah Array Probe Interface, pass a path if a different geometry is used
+        ecephys_interface = UtahArrayProbeInterface(file_path=None)
 
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
@@ -101,11 +108,11 @@ def convert_session_to_nwb(
             image_set_name=project_name,
             verbose=verbose,
         )
-
     conversion_options["Stimuli"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
+
     # Build the converter pipe with the previously defined data interfaces
     data_interfaces_dict = {
-        "Recording": intan_recording_interface,
+        "Ecephys": ecephys_interface,
         "Behavior": behavioral_trials_interface,
         "Stimuli": stimuli_interface,
     }

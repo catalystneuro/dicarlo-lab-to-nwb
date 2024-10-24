@@ -12,8 +12,8 @@ assert stimulus_data_folder_path.exists(), f"{stimulus_data_folder_path} does no
 session_date = "20240715"
 subject = "Apollo"  # Confirm this?
 
-output_dir_path = Path.home() / "conversion_nwb"
-stub_test = True
+output_dir_path = data_folder / "nwb_files"
+stub_test = False
 verbose = True
 add_thresholding_events = True
 add_psth = True
