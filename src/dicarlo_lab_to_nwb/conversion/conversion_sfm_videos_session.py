@@ -21,6 +21,7 @@ add_thresholding_events = True
 add_psth = True
 stimuli_are_video = True
 add_raw_amplifier_data = False
+add_psth_in_pipeline_format_to_nwb = True
 
 thresholindg_pipeline_kwargs = {
     "f_notch": 60.0,  # Frequency for the notch filter
@@ -42,7 +43,8 @@ folders_in_session_date = [folder for folder in session_folder_path.iterdir() if
 session_data_folder_path = next(path for path in folders_in_session_date if project_name in path.name)
 normalizers = [folder for folder in folders_in_session_date if "normalizers" in folder.name]
 
-folder_paths_to_convert = [session_data_folder_path] + normalizers
+folder_paths_to_convert = normalizers
+folder_paths_to_convert += [session_data_folder_path]
 
 for folder_with_data_path in folder_paths_to_convert:
     intan_file_path = folder_with_data_path / "info.rhd"
@@ -81,4 +83,5 @@ for folder_with_data_path in folder_paths_to_convert:
         stimuli_are_video=stimuli_are_video,
         ground_truth_time_column=ground_truth_time_column,
         add_raw_amplifier_data=add_raw_amplifier_data,
+        add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
     )

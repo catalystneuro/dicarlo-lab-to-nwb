@@ -202,6 +202,8 @@ def convert_session_to_nwb(
             thresholindg_pipeline_kwargs=thresholindg_pipeline_kwargs,
         )
 
+        del sorting
+
         if verbose:
             stop_time = time.time()
             thresholding_time = stop_time - start_time
