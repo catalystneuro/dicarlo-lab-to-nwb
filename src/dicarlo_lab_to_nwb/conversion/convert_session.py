@@ -18,7 +18,10 @@ from dicarlo_lab_to_nwb.conversion.probe import (
     UtahArrayProbeInterface,
     attach_probe_to_recording,
 )
-from dicarlo_lab_to_nwb.conversion.psth import write_binned_spikes_to_nwbfile
+from dicarlo_lab_to_nwb.conversion.psth import (
+    write_binned_spikes_to_nwbfile,
+    write_psth_pipeline_format_to_nwbfile,
+)
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     StimuliImagesInterface,
     StimuliVideoInterface,
@@ -41,6 +44,7 @@ def convert_session_to_nwb(
     ground_truth_time_column: str = "samp_on_us",
     add_raw_amplifier_data: bool = False,
     probe_info_path: str | Path | None = None,
+    add_psth_in_pipeline_format_to_nwb: bool = True,
 ):
     if verbose:
         total_start = time.time()
@@ -95,7 +99,7 @@ def convert_session_to_nwb(
 
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
-
+    conversion_options["Behavior"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
     # Add Stimuli Interface
     if stimuli_are_video:
         stimuli_interface = StimuliVideoInterface(
@@ -194,10 +198,11 @@ def convert_session_to_nwb(
         nwbfile_path = write_thresholding_events_to_nwb(
             sorting=sorting,
             nwbfile_path=nwbfile_path,
-            append=True,
             verbose=verbose,
             thresholindg_pipeline_kwargs=thresholindg_pipeline_kwargs,
         )
+
+        del sorting
 
         if verbose:
             stop_time = time.time()
@@ -226,9 +231,14 @@ def convert_session_to_nwb(
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             number_of_bins=number_of_bins,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
-            append=True,
             verbose=verbose,
         )
+
+        if add_psth_in_pipeline_format_to_nwb:
+            write_psth_pipeline_format_to_nwbfile(
+                nwbfile_path=nwbfile_path,
+                verbose=verbose,
+            )
 
         if verbose:
             stop_time = time.time()
@@ -250,4 +260,4 @@ def convert_session_to_nwb(
         else:
             print(f"Total script took {total_scrip_time / 60 / 60:.2f} hours")
 
-        print("\n \n \n")
+        print("\n \n")

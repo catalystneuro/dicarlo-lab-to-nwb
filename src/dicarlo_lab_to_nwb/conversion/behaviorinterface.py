@@ -23,7 +23,13 @@ class BehavioralTrialsInterface(BaseDataInterface):
 
         return metadata
 
-    def add_to_nwbfile(self, nwbfile: NWBFile, metadata: dict):
+    def add_to_nwbfile(
+        self,
+        nwbfile: NWBFile,
+        metadata: dict | None = None,
+        stub_test: bool = False,
+        ground_truth_time_column: str = "samp_on_us",
+    ):
         # In this experiment setup the presentation of stimuli is batched as groups of at most 8 images.
         # Every presentation starts with a stim_on_time, then up to 8 images are presented
         # for stim_on time, then there is a stim_off_time before the next presentation.
@@ -33,7 +39,9 @@ class BehavioralTrialsInterface(BaseDataInterface):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
-        ground_truth_time_column = "samp_on_us"
+        if stub_test:
+            mwkorks_df = mwkorks_df.iloc[:100]
+
         mwkorks_df["start_time"] = mwkorks_df[ground_truth_time_column] / 1e6
         mwkorks_df["stimuli_presentation_time_ms"] = mwkorks_df["stim_on_time_ms"]
         mwkorks_df["inter_stimuli_interval_ms"] = mwkorks_df["stim_off_time_ms"]
