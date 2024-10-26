@@ -10,11 +10,12 @@ stimulus_data_folder_path = data_folder / project_name
 assert stimulus_data_folder_path.exists(), f"{stimulus_data_folder_path} does not exist"
 
 session_date = "20240715"
+session_date = "20240716"
 subject = "Apollo"  # Confirm this?
 pipeline_version = "DiLorean"
 
 output_dir_path = data_folder / "nwb_files"
-stub_test = True
+stub_test = False
 verbose = True
 add_thresholding_events = True
 add_psth = True

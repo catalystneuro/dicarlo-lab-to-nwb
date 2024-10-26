@@ -519,6 +519,7 @@ def calculate_thresholding_events(
 
         num_units = len(probe_sorting.get_unit_ids())
         values = [probe_name] * num_units
+        values = np.asarray(values, dtype=object)
         probe_sorting.set_property(key="probe", values=values)
         sorting_list.append(probe_sorting)
 
@@ -541,7 +542,7 @@ def write_thresholding_events_to_nwb(
     sorting: BaseSorting,
     nwbfile_path: str | Path,
     thresholindg_pipeline_kwargs: dict,
-    append=False,
+    append: bool = True,
     verbose: bool = False,
 ):
 
@@ -555,8 +556,16 @@ def write_thresholding_events_to_nwb(
             f"{thresholindg_pipeline_kwargs}"
         )
 
-        number_of_units = sorting.get_num_units()
-        unit_electrode_indices = [[i] for i in range(number_of_units)]
+        # We map the units to electrodes based on the unit name
+        # For the Utah Array probe there is only site per channel
+        unit_names = sorting.get_unit_ids()
+        channel_names = nwbfile.electrodes["channel_name"].data[:].tolist()
+
+        unit_electrode_indices = []
+        for unit_name in unit_names:
+            index = channel_names.index(unit_name)
+            unit_electrode_indices.append([index])
+
         add_sorting_to_nwbfile(
             nwbfile=nwbfile,
             sorting=sorting,

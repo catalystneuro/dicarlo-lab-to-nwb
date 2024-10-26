@@ -95,7 +95,7 @@ def convert_session_to_nwb(
 
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
-
+    conversion_options["Behavior"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
     # Add Stimuli Interface
     if stimuli_are_video:
         stimuli_interface = StimuliVideoInterface(
@@ -194,7 +194,6 @@ def convert_session_to_nwb(
         nwbfile_path = write_thresholding_events_to_nwb(
             sorting=sorting,
             nwbfile_path=nwbfile_path,
-            append=True,
             verbose=verbose,
             thresholindg_pipeline_kwargs=thresholindg_pipeline_kwargs,
         )
@@ -226,7 +225,6 @@ def convert_session_to_nwb(
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             number_of_bins=number_of_bins,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
-            append=True,
             verbose=verbose,
         )
 
@@ -250,4 +248,4 @@ def convert_session_to_nwb(
         else:
             print(f"Total script took {total_scrip_time / 60 / 60:.2f} hours")
 
-        print("\n \n \n")
+        print("\n \n")
