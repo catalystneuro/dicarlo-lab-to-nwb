@@ -52,7 +52,7 @@ class StimuliImagesInterface(BaseDataInterface):
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
         if stub_test:
-            mwkorks_df = mwkorks_df.iloc[:100]
+            mwkorks_df = mwkorks_df.iloc[:10]
 
         columns = mwkorks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
@@ -135,7 +135,7 @@ class StimuliVideoInterface(BaseDataInterface):
     def add_to_nwbfile(
         self,
         nwbfile: NWBFile,
-        metadata: dict,
+        metadata: dict | None = None,
         stub_test: bool = False,
         ground_truth_time_column: str = "samp_on_us",
     ):
@@ -143,7 +143,7 @@ class StimuliVideoInterface(BaseDataInterface):
         mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
         if stub_test:
-            mwkorks_df = mwkorks_df.iloc[:100]
+            mwkorks_df = mwkorks_df.iloc[:10]
 
         columns = mwkorks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"

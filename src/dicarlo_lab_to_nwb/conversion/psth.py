@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import natsort
 import numpy as np
 from ndx_binned_spikes import BinnedAlignedSpikes
 from pynwb import NWBHDF5IO, NWBFile
@@ -216,7 +217,7 @@ def build_psth_from_nwbfile(
     number_of_bins: int,
     milliseconds_from_event_to_first_bin: float = 0.0,
     verbose: bool = False,
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, list]:
     """
     Calculate peristimulus time histograms (PSTHs) for each stimulus from an NWB file.
 
@@ -235,11 +236,13 @@ def build_psth_from_nwbfile(
 
     Returns
     -------
-    psth_dict : dict
+    stimuli_id_psth : dict
         Dictionary where keys are stimulus IDs and values are arrays of PSTH counts.
-    stimuli_presentation_times_dict : dict
+    stimuli_id_times : dict
         Dictionary where keys are stimulus IDs and values are arrays of stimulus presentation times in seconds.
-
+    unit_ids_order: list
+        List of unit ids sorted by their name (A-001, A-002, ...). Used to build a map between the units
+        in the psth and the units in the NWB file.
     Raises
     ------
     AssertionError
@@ -249,29 +252,27 @@ def build_psth_from_nwbfile(
     units_data_frame = nwbfile.units.to_dataframe()
     unit_ids = units_data_frame["unit_name"].values
     spike_times = units_data_frame["spike_times"].values
+
     dict_of_spikes_times = {id: st for id, st in zip(unit_ids, spike_times)}
 
     # For the DiCarlo project it is important that units are sorted by their name (A-001, A-002, ...)
-    unit_ids_sorted = sorted(unit_ids)
-    spike_times_list = [dict_of_spikes_times[id] for id in unit_ids_sorted]
+    unit_ids_order = sorted(unit_ids)
+    spike_times_list = [dict_of_spikes_times[id] for id in unit_ids_order]
 
     trials_dataframe = nwbfile.trials.to_dataframe()
-    stimuli_presentation_times_seconds = trials_dataframe["start_time"]
+    stimuli_times = trials_dataframe["start_time"]  # In seconds
     stimuli_presentation_id = trials_dataframe["stimulus_presented"]
     stimuli_ids = stimuli_presentation_id.unique()
 
     # We also sort the stimuli by their id
     stimuli_ids_sorted = sorted(stimuli_ids)
+    id_to_df_indices = {id: stimuli_presentation_id == id for id in stimuli_ids_sorted}
+    stimuli_id_times = {id: stimuli_times[indices] for id, indices in id_to_df_indices.items()}
 
-    stimuli_presentation_times_dict = {
-        stimulus_id: stimuli_presentation_times_seconds[stimuli_presentation_id == stimulus_id].values
-        for stimulus_id in stimuli_ids_sorted
-    }
-
-    psth_dict = {}
+    stimuli_id_psth = {}
     desc = "Calculating PSTH for stimuli"
     for stimuli_id in tqdm(stimuli_ids_sorted, desc=desc, unit=" stimuli processed", disable=not verbose):
-        stimulus_presentation_times = stimuli_presentation_times_dict[stimuli_id]
+        stimulus_presentation_times = stimuli_id_times[stimuli_id]
         psth_per_stimuli = calculate_event_psth(
             spike_times_list=spike_times_list,
             event_times_seconds=stimulus_presentation_times,
@@ -279,9 +280,9 @@ def build_psth_from_nwbfile(
             number_of_bins=number_of_bins,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
         )
-        psth_dict[stimuli_id] = psth_per_stimuli
+        stimuli_id_psth[stimuli_id] = psth_per_stimuli
 
-    return psth_dict, stimuli_presentation_times_dict
+    return stimuli_id_psth, stimuli_id_times, unit_ids_order
 
 
 def build_binned_aligned_spikes_from_nwbfile(
@@ -316,7 +317,7 @@ def build_binned_aligned_spikes_from_nwbfile(
 
     assert nwbfile.units is not None, "NWBFile does not have units table, psths cannot be calculated."
 
-    psth_dict, stimuli_presentation_times_dict = build_psth_from_nwbfile(
+    stimuli_id_psth, stimuli_id_times, unit_ids_order = build_psth_from_nwbfile(
         nwbfile=nwbfile,
         bin_width_in_milliseconds=bin_width_in_milliseconds,
         number_of_bins=number_of_bins,
@@ -325,23 +326,29 @@ def build_binned_aligned_spikes_from_nwbfile(
     )
 
     units_table = nwbfile.units
-    num_units = units_table["id"].shape[0]
-    region_indices = [i for i in range(num_units)]
+
+    # This guarantees that we link the unit to the corresponding psth in the
+    # way that they were sorted in the psth calculation
+    region_indices = []
+    unit_names = units_table["unit_name"].data[:].tolist()
+    for id in unit_ids_order:
+        index = unit_names.index(id)
+        region_indices.append(index)
+
     units_region = DynamicTableRegion(
         data=region_indices, table=units_table, description="region of units table", name="units_region"
     )
 
-    event_timestamps = [stimuli_presentation_times_dict[stimulus_id] for stimulus_id in psth_dict.keys()]
-    data = [psth_dict[stimulus_id] for stimulus_id in psth_dict.keys()]
-    condition_labels = [stimulus_id for stimulus_id in psth_dict.keys()]
-    condition_indices = [
-        [index] * len(stimuli_presentation_times_dict[stimulus_id])
-        for index, stimulus_id in enumerate(psth_dict.keys())
-    ]
+    event_timestamps = [stimuli_id_times[id] for id in stimuli_id_psth.keys()]
+    data = [stimuli_id_psth[id] for id in stimuli_id_psth.keys()]
+    condition_labels = [id for id in stimuli_id_psth.keys()]
+    condition_indices = [[index] * len(stimuli_id_times[id]) for index, id in enumerate(stimuli_id_psth.keys())]
 
     event_timestamps = np.concatenate(event_timestamps)
     data = np.concatenate(data, axis=1)  # We concatenate across the events axis
+    data = data.astype("uint64")
     condition_indices = np.concatenate(condition_indices)
+    condition_indices = condition_indices.astype("uint64")
 
     data, event_timestamps, condition_indices = BinnedAlignedSpikes.sort_data_by_event_timestamps(
         data=data,
@@ -353,6 +360,7 @@ def build_binned_aligned_spikes_from_nwbfile(
         name=f"BinnedAlignedSpikesToStimulus",
         data=data,
         event_timestamps=event_timestamps,
+        condition_indices=condition_indices,
         condition_labels=condition_labels,
         bin_width_in_milliseconds=bin_width_in_milliseconds,
         milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
@@ -367,7 +375,7 @@ def write_binned_spikes_to_nwbfile(
     number_of_bins: int,
     bin_width_in_milliseconds: float,
     milliseconds_from_event_to_first_bin: float = 0.0,
-    append: bool = False,
+    append: bool = True,
     verbose: bool = False,
 ) -> Path | str:
     """
@@ -425,4 +433,154 @@ def write_binned_spikes_to_nwbfile(
 
     if verbose:
         print(f"Appended binned spikes to {nwbfile_path}")
+    return nwbfile_path
+
+
+from ndx_binned_spikes import BinnedAlignedSpikes
+
+
+def reshape_binned_spikes_data_to_pipeline_format(binned_aligned_spikes: BinnedAlignedSpikes) -> np.ndarray:
+    """
+    Extracts the PSTH data from the BinnedAlignedSpikes object and reshapes it to the DiCarlo lab convention.
+
+    Reorganizes spike data from (units, stimuli, bins) format to
+    (units, stimuli_index, stimuli_repetitions, time_bins) format, with stimuli ordered by
+    naturally sorted condition labels. Empty repetitions are filled with NaN values.
+
+    Parameters
+    ----------
+    binned_aligned_spikes : BinnedAlignedSpikes
+        Object containing aligned spike data with conditions and labels. Must have attributes:
+        - data : array of spike counts
+        - condition_indices : indices mapping trials to conditions
+        - condition_labels : labels for each condition
+        - number_of_units : total number of units
+        - number_of_bins : number of time bins
+        - number_of_conditions : number of unique stimuli
+
+    see `ndx-binned-spikes` for more information on the BinnedAlignedSpikes object.
+
+    Returns
+    -------
+    np.ndarray
+        Reshaped array with dimensions (units, stimuli_index, stimuli_repetitions, time_bins).
+        The stimuli are ordered according to natural sorting of their condition labels.
+        Missing repetitions are filled with NaN values.
+
+    Notes
+    -----
+    The function uses natural sorting for condition labels, meaning that labels like
+    ['stim1', 'stim2', 'stim10'] will be correctly ordered numerically instead of
+    lexicographically. Empty repetition slots are filled with NaN to maintain consistent
+    array dimensions across all stimuli.
+    """
+    import ndx_binned_spikes
+
+    data = binned_aligned_spikes.data[:]
+    condition_indices = binned_aligned_spikes.condition_indices[:]
+    condition_labels = binned_aligned_spikes.condition_labels[:]
+
+    number_of_units = binned_aligned_spikes.number_of_units
+    number_of_bins = binned_aligned_spikes.number_of_bins
+    number_of_stimuli = binned_aligned_spikes.number_of_conditions
+
+    unique_conditions = np.unique(condition_indices)
+    max_repetitions = max(np.sum(condition_indices == cond) for cond in unique_conditions)
+
+    psth_pipepline_format = np.full((number_of_units, number_of_stimuli, max_repetitions, number_of_bins), np.nan)
+
+    # Now, we will fill the data in the ordered of the sorted condition labels
+    stimuli_labels_order = natsort.natsorted(condition_labels)
+
+    for stimulus_index, label in enumerate(stimuli_labels_order):
+
+        # Find corresponding condition index
+        condition_index = np.where(condition_labels == label)[0][0]
+        stimulus_psth = binned_aligned_spikes.get_data_for_condition(condition_index=condition_index)
+        n_reps = stimulus_psth.shape[1]
+
+        # Directly index the data using the condition trials
+        psth_pipepline_format[:, stimulus_index, :n_reps, :] = stimulus_psth
+
+    return psth_pipepline_format
+
+
+def extract_psth_pipeline_format_from_nwbfile(
+    nwbfile: NWBFile,
+    binned_aligned_spikes_name: str | None = None,
+) -> np.ndarray:
+    """
+    Extracts the PSTH data from the BinnedAlignedSpikes object and reshapes it to the DiCarlo lab convention.
+
+    Reorganizes spike data from (units, stimuli, bins) format to
+    (units, stimuli_index, stimuli_repetitions, time_bins) format, with stimuli ordered by
+    naturally sorted condition labels. Empty repetitions are filled with NaN values.
+
+    Parameters
+    ----------
+    binned_aligned_spikes : BinnedAlignedSpikes
+        Object containing aligned spike data with conditions and labels. Must have attributes:
+        - data : array of spike counts
+        - condition_indices : indices mapping trials to conditions
+        - condition_labels : labels for each condition
+        - number_of_units : total number of units
+        - number_of_bins : number of time bins
+        - number_of_conditions : number of unique stimuli
+
+    Returns
+    -------
+    np.ndarray
+        Reshaped array with dimensions (units, stimuli_index, stimuli_repetitions, time_bins).
+        The stimuli are ordered according to natural sorting of their condition labels.
+        Missing repetitions are filled with NaN values.
+
+    Notes
+    -----
+    The function uses natural sorting for condition labels, meaning that labels like
+    ['stim1', 'stim2', 'stim10'] will be correctly ordered numerically instead of
+    lexicographically. Empty repetition slots are filled with NaN to maintain consistent
+    array dimensions across all stimuli.
+    """
+
+    from pynwb import NWBHDF5IO
+
+    binned_aligned_spikes_name = binned_aligned_spikes_name or "BinnedAlignedSpikesToStimulus"
+
+    binned_aligned_spikes = nwbfile.processing["ecephys"][binned_aligned_spikes_name]
+    psth_pipeline_format = reshape_binned_spikes_data_to_pipeline_format(binned_aligned_spikes)
+
+    return psth_pipeline_format
+
+
+def write_psth_pipeline_format_to_nwbfile(
+    nwbfile_path: str | Path,
+    binned_aligned_spikes_name: str = "BinnedAlignedSpikesToStimulus",
+    append: bool = True,
+    verbose: bool = False,
+) -> str | Path:
+
+    import ndx_binned_spikes  # This is necessary to avoid some pynwb extensio bug where methods are not loaded
+
+    mode = "a" if append else "r"
+
+    with NWBHDF5IO(nwbfile_path, mode=mode) as io:
+        nwbfile = io.read()
+
+        psth_pipeline_format = extract_psth_pipeline_format_from_nwbfile(nwbfile, binned_aligned_spikes_name)
+
+        description = f"PSTH data in the DiCarlo lab format (units, stimuli_index, stimuli_repetitions, time_bins)"
+        nwbfile.add_scratch(psth_pipeline_format, name="psth_pipeline_format", description=description)
+
+        if append:
+            io.write(nwbfile)
+
+        else:
+            nwbfile.generate_new_id()
+            nwbfile_path = nwbfile_path.with_name(nwbfile_path.stem + "_with_psth_in_scratch_pad.nwb")
+
+            with NWBHDF5IO(nwbfile_path, mode="w") as export_io:
+                export_io.export(src_io=io, nwbfile=nwbfile)
+    if verbose:
+        print(f"Appended PSTH in pipeline format to {nwbfile_path}")
+
     return nwbfile_path
