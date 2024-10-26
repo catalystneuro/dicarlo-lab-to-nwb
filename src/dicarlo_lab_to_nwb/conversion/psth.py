@@ -505,8 +505,8 @@ def reshape_binned_spikes_data_to_pipeline_format(binned_aligned_spikes: BinnedA
     return psth_pipepline_format
 
 
-def extract_psth_pipeline_format_from_nwbpath(
-    nwbfile_path: str | Path,
+def extract_psth_pipeline_format_from_nwbfile(
+    nwbfile: NWBFile,
     binned_aligned_spikes_name: str | None = None,
 ) -> np.ndarray:
     """
@@ -542,14 +542,45 @@ def extract_psth_pipeline_format_from_nwbpath(
     array dimensions across all stimuli.
     """
 
-    import ndx_binned_spikes  # This is necessary to avoid some pynwb extensio bug where methods are not loaded
     from pynwb import NWBHDF5IO
 
     binned_aligned_spikes_name = binned_aligned_spikes_name or "BinnedAlignedSpikesToStimulus"
 
-    with NWBHDF5IO(nwbfile_path, mode="r") as io:
-        nwbfile = io.read()
-        binned_aligned_spikes = nwbfile.processing["ecephys"][binned_aligned_spikes_name]
-        psth_pipeline_format = reshape_binned_spikes_data_to_pipeline_format(binned_aligned_spikes)
+    binned_aligned_spikes = nwbfile.processing["ecephys"][binned_aligned_spikes_name]
+    psth_pipeline_format = reshape_binned_spikes_data_to_pipeline_format(binned_aligned_spikes)
 
     return psth_pipeline_format
+
+
+def write_psth_pipeline_format_to_nwbfile(
+    nwbfile_path: str | Path,
+    binned_aligned_spikes_name: str = "BinnedAlignedSpikesToStimulus",
+    append: bool = True,
+    verbose: bool = False,
+) -> str | Path:
+
+    import ndx_binned_spikes  # This is necessary to avoid some pynwb extensio bug where methods are not loaded
+
+    mode = "a" if append else "r"
+
+    with NWBHDF5IO(nwbfile_path, mode=mode) as io:
+        nwbfile = io.read()
+
+        psth_pipeline_format = extract_psth_pipeline_format_from_nwbfile(nwbfile, binned_aligned_spikes_name)
+
+        description = f"PSTH data in the DiCarlo lab format (units, stimuli_index, stimuli_repetitions, time_bins)"
+        nwbfile.add_scratch(psth_pipeline_format, name="psth_pipeline_format", description=description)
+
+        if append:
+            io.write(nwbfile)
+
+        else:
+            nwbfile.generate_new_id()
+            nwbfile_path = nwbfile_path.with_name(nwbfile_path.stem + "_with_psth_in_scratch_pad.nwb")
+
+            with NWBHDF5IO(nwbfile_path, mode="w") as export_io:
+                export_io.export(src_io=io, nwbfile=nwbfile)
+    if verbose:
+        print(f"Appended PSTH in pipeline format to {nwbfile_path}")
+
+    return nwbfile_path

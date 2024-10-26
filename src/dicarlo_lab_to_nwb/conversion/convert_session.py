@@ -18,7 +18,10 @@ from dicarlo_lab_to_nwb.conversion.probe import (
     UtahArrayProbeInterface,
     attach_probe_to_recording,
 )
-from dicarlo_lab_to_nwb.conversion.psth import write_binned_spikes_to_nwbfile
+from dicarlo_lab_to_nwb.conversion.psth import (
+    write_binned_spikes_to_nwbfile,
+    write_psth_pipeline_format_to_nwbfile,
+)
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     StimuliImagesInterface,
     StimuliVideoInterface,
@@ -41,6 +44,7 @@ def convert_session_to_nwb(
     ground_truth_time_column: str = "samp_on_us",
     add_raw_amplifier_data: bool = False,
     probe_info_path: str | Path | None = None,
+    add_psth_in_pipeline_format_to_nwb: bool = True,
 ):
     if verbose:
         total_start = time.time()
@@ -227,6 +231,12 @@ def convert_session_to_nwb(
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
             verbose=verbose,
         )
+
+        if add_psth_in_pipeline_format_to_nwb:
+            write_psth_pipeline_format_to_nwbfile(
+                nwbfile_path=nwbfile_path,
+                verbose=verbose,
+            )
 
         if verbose:
             stop_time = time.time()
