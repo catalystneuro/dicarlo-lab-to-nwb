@@ -135,7 +135,7 @@ def convert_session_to_nwb(
     # Add datetime to conversion
     metadata = converter_pipe.get_metadata()
     metadata["NWBFile"]["session_start_time"] = session_start_time
-    metadata["session_id"] = session_id
+    metadata["NWBFile"]["session_id"] = session_id
 
     # Update default metadata with the editable in the corresponding yaml file
     editable_metadata_path = Path(__file__).parent / "metadata.yaml"
