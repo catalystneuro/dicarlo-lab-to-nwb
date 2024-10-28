@@ -62,12 +62,14 @@ class StimuliImagesInterface(BaseDataInterface):
         unique_stimulus_ids = stimulus_ids.unique()
         unique_stimulus_ids.sort()
 
+        from hdmf.data_utils import DataChunkIterator
+
         image_list = []
 
         for stimulus_id in tqdm(
             unique_stimulus_ids, desc="Processing images", unit=" images", disable=not self.verbose
         ):
-            image_name = f"im{stimulus_id}"
+            image_name = f"img{stimulus_id + 1}"
             image_file_path = self.stimuli_folder / f"{image_name}.png"
             assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
             image = Image.open(image_file_path)
@@ -95,18 +97,22 @@ class StimuliImagesInterface(BaseDataInterface):
             order_of_images=ImageReferences("order_of_images", image_list),
         )
 
+        nwbfile.add_stimulus(images_container)
+
+        indexed_images = nwbfile.stimulus["stimuli"]
+
+        # Add the stimulus presentation index
         stimulus_id_to_index = {stimulus_id: index for index, stimulus_id in enumerate(unique_stimulus_ids)}
         data = np.asarray([stimulus_id_to_index[stimulus_id] for stimulus_id in stimulus_ids], dtype=np.uint32)
         index_series = IndexSeries(
             name="stimulus_presentation",
             data=data,
-            indexed_images=images_container,
+            indexed_images=indexed_images,
             unit="N/A",
             timestamps=image_presentation_time_seconds.values,
             description="Stimulus presentation index",
         )
 
-        nwbfile.add_stimulus(images_container)
         nwbfile.add_stimulus(index_series)
 
 
