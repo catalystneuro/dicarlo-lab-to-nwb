@@ -53,6 +53,8 @@ class StimuliImagesInterface(BaseDataInterface):
 
         if stub_test:
             mwkorks_df = mwkorks_df.iloc[:10]
+        else:
+            mwkorks_df = mwkorks_df.iloc[-1000:]
 
         columns = mwkorks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
@@ -61,8 +63,6 @@ class StimuliImagesInterface(BaseDataInterface):
 
         unique_stimulus_ids = stimulus_ids.unique()
         unique_stimulus_ids.sort()
-
-        from hdmf.data_utils import DataChunkIterator
 
         image_list = []
 
