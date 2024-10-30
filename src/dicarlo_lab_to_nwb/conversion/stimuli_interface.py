@@ -54,7 +54,7 @@ class StimuliImagesInterface(BaseDataInterface):
         if stub_test:
             mwkorks_df = mwkorks_df.iloc[:10]
         else:
-            mwkorks_df = mwkorks_df.iloc[-1000:]
+            mwkorks_df = mwkorks_df.iloc[:1000]
 
         columns = mwkorks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
