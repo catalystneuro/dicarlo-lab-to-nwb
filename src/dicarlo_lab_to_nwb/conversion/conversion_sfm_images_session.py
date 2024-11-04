@@ -15,13 +15,14 @@ subject = "Apollo"
 pipeline_version = "DiLorean"
 
 output_dir_path = data_folder / "nwb_files"
-stub_test = False
+stub_test = True
 verbose = True
+add_amplifier_data_to_nwb = False
+add_stimuli_media_to_nwb = False
 add_thresholding_events = True
 add_psth = True
-stimuli_are_video = False
-add_raw_amplifier_data = False
 add_psth_in_pipeline_format_to_nwb = True
+stimuli_are_video = False
 
 thresholindg_pipeline_kwargs = {
     "f_notch": 60.0,  # Frequency for the notch filter
@@ -59,7 +60,7 @@ for folder_with_data_path in folder_paths_to_convert:
     session_time = folder_with_data_path.name.split("_")[-1]
 
     is_normalizer = "normalizer" in folder_with_data_path.name
-    type_of_data = "session_data" if not is_normalizer else "normalizer_data"
+    type_of_data = "session" if not is_normalizer else "normalizer"
     session_metadata = {
         "project_name": project_name,
         "session_date": session_date,
@@ -82,7 +83,8 @@ for folder_with_data_path in folder_paths_to_convert:
         add_thresholding_events=add_thresholding_events,
         add_psth=add_psth,
         stimuli_are_video=stimuli_are_video,
+        add_stimuli_media_to_nwb=add_stimuli_media_to_nwb,
         ground_truth_time_column=ground_truth_time_column,
-        add_raw_amplifier_data=add_raw_amplifier_data,
+        add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
         add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
     )
