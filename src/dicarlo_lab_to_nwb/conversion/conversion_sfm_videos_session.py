@@ -10,17 +10,18 @@ stimulus_data_folder_path = data_folder / project_name
 assert stimulus_data_folder_path.exists(), f"{stimulus_data_folder_path} does not exist"
 
 session_date = "20240715"
-session_date = "20240716"
+# session_date = "20240716"
 subject = "Apollo"  # Confirm this?
 pipeline_version = "DiLorean"
 
 output_dir_path = data_folder / "nwb_files"
 stub_test = False
+add_amplifier_data_to_nwb = False
+add_stimuli_media_to_nwb = False
 verbose = True
 add_thresholding_events = True
 add_psth = True
 stimuli_are_video = True
-add_raw_amplifier_data = False
 add_psth_in_pipeline_format_to_nwb = True
 
 thresholindg_pipeline_kwargs = {
@@ -43,8 +44,10 @@ folders_in_session_date = [folder for folder in session_folder_path.iterdir() if
 session_data_folder_path = next(path for path in folders_in_session_date if project_name in path.name)
 normalizers = [folder for folder in folders_in_session_date if "normalizers" in folder.name]
 
-folder_paths_to_convert = normalizers
+folder_paths_to_convert = []
 folder_paths_to_convert += [session_data_folder_path]
+folder_paths_to_convert += normalizers
+
 
 for folder_with_data_path in folder_paths_to_convert:
     intan_file_path = folder_with_data_path / "info.rhd"
@@ -58,7 +61,7 @@ for folder_with_data_path in folder_paths_to_convert:
     session_time = folder_with_data_path.name.split("_")[-1]
 
     is_normalizer = "normalizer" in folder_with_data_path.name
-    type_of_data = "session_data" if not is_normalizer else "normalizer_data"
+    type_of_data = "session" if not is_normalizer else "normalizer"
     session_metadata = {
         "project_name": project_name,
         "session_date": session_date,
@@ -82,6 +85,7 @@ for folder_with_data_path in folder_paths_to_convert:
         add_psth=add_psth,
         stimuli_are_video=stimuli_are_video,
         ground_truth_time_column=ground_truth_time_column,
-        add_raw_amplifier_data=add_raw_amplifier_data,
+        add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
+        add_stimuli_media_to_nwb=add_stimuli_media_to_nwb,
         add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
     )
