@@ -1,6 +1,6 @@
 import datetime
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 import ndx_binned_spikes
 import numpy as np
@@ -155,17 +155,15 @@ def create_destination_nwbfile(output_path: Path, session_id: str) -> None:
     session_id : str
         Session ID for the file
     """
-    unit_epoch = int(datetime.datetime.now().timestamp())
-    unit_epoch_as_datetime = datetime.datetime.fromtimestamp(unit_epoch)
     datetime_now = datetime.datetime.now()
 
     pipeline_version = session_id.split("_")[-1]
 
     nwbfile = NWBFile(
-        session_start_time=unit_epoch_as_datetime,
+        session_start_time=datetime_now,
         session_description=pipeline_version,
-        identifier=str(datetime_now),
         session_id=session_id,
+        identifier=session_id,
     )
 
     # Create processing module for spike times
@@ -247,7 +245,7 @@ def aggregate_nwbfiles(
     file_paths: List[Union[str, Path]],
     output_folder_path: Union[str, Path],
     pipeline_version: str = "DiLorean",
-    is_unit_valid: np.ndarray = None,
+    is_unit_valid: Optional[np.ndarray] = None,
 ) -> Path:
     """
     Aggregate multiple NWB files into a single file.
@@ -384,3 +382,75 @@ def aggregate_nwbfiles(
         io.write(nwbfile)
 
     return aggregated_nwbfile_path
+
+
+def split_aggregated_nwbfile_train_test(
+    aggregated_nwbfile_path: Union[str, Path],
+    is_stimulus_test: np.ndarray,
+) -> dict:
+    """Split an aggregated NWB file into training and testing files.
+
+    Parameters
+    ----------
+    aggregated_nwbfile_path : str or Path
+        Path to the aggregated NWB file
+    is_stimulus_test : np.ndarray
+        Boolean array indicating which stimuli are in the testing set
+    Returns
+    -------
+    dict
+        Dictionary containing the paths to the training and testing files
+    """
+    aggregated_nwbfile_path = Path(aggregated_nwbfile_path)
+
+    with NWBHDF5IO(aggregated_nwbfile_path, mode="r") as io:
+        nwbfile = io.read()
+        concatenated_psth = nwbfile.scratch["psth_session_data_concatenated"].data[:]
+        session_start_time = nwbfile.session_start_time
+        session_id = nwbfile.session_id
+        session_description = nwbfile.session_description
+
+    psth_data_test = concatenated_psth[:, is_stimulus_test, ...]
+    psth_data_train = concatenated_psth[:, ~is_stimulus_test, ...]
+
+    nwbfile_train = NWBFile(
+        session_start_time=session_start_time,
+        session_description=session_description,
+        session_id=session_id,
+        identifier=f"{session_id}_train",
+    )
+
+    nwbfile_test = NWBFile(
+        session_start_time=session_start_time,
+        session_description=session_description,
+        session_id=session_id,
+        identifier=f"{session_id}_test",
+    )
+
+    nwbfile_train.add_scratch(
+        psth_data_train,
+        name="psth_session_data_concatenated",
+        description="Concatenated PSTH from multiple files (training data)",
+    )
+
+    nwbfile_test.add_scratch(
+        psth_data_test,
+        name="psth_session_data_concatenated",
+        description="Concatenated PSTH from multiple files (testing data)",
+    )
+
+    # Save training and testing files
+    output_folder_path = aggregated_nwbfile_path.parent
+    nwbfile_train_path = output_folder_path / f"{aggregated_nwbfile_path.stem}_train.nwb"
+
+    with NWBHDF5IO(nwbfile_train_path, mode="w") as io:
+        io.write(nwbfile_train)
+
+    nwbfile_test_path = output_folder_path / f"{aggregated_nwbfile_path.stem}_test.nwb"
+    with NWBHDF5IO(nwbfile_test_path, mode="w") as io:
+        io.write(nwbfile_test)
+
+    return {
+        "train": nwbfile_train_path,
+        "test": nwbfile_test_path,
+    }
