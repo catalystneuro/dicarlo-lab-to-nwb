@@ -100,8 +100,7 @@ def check_that_metadata_matches_across_files(
 
 def add_units_table(
     source_nwbfile: NWBFile,
-    new_nwbfile: NWBFile,
-    session_spike_times_module: pynwb.base.ProcessingModule,
+    dest_nwbfile: NWBFile,
     type_of_data: str,
 ):
     """Add units table from source file to the new file.
@@ -110,10 +109,8 @@ def add_units_table(
     ----------
     source_nwbfile : NWBFile
         Source NWB file containing the units table to copy
-    new_nwbfile : NWBFile
+    dest_nwbfile : NWBFile
         Target NWB file where the units table will be added
-    session_spike_times_module : ProcessingModule
-        Processing module where the units table will be stored
     type_of_data : str
         Type of data identifier for naming
 
@@ -129,7 +126,8 @@ def add_units_table(
     new_units_table = pynwb.misc.Units(name=name_in_aggregated_table, description=units_table.description)
 
     # Add to processing module
-    session_spike_times_module.add(new_units_table)
+    session_spikes_times_module = dest_nwbfile.processing["session_spike_times"]
+    session_spikes_times_module.add(new_units_table)
 
     # Transfer columns and data
     units_table_df = units_table.to_dataframe()
@@ -147,7 +145,7 @@ def add_units_table(
         new_units_table.add_unit(**row_dict)
 
 
-def create_destination_nwbfile(output_path: Path, session_id: str, pipeline_version: str = "DiLorean") -> None:
+def create_destination_nwbfile(output_path: Path, session_id: str) -> None:
     """Create the initial NWB file with basic metadata.
 
     Parameters
@@ -156,12 +154,12 @@ def create_destination_nwbfile(output_path: Path, session_id: str, pipeline_vers
         Where to save the initial NWB file
     session_id : str
         Session ID for the file
-    pipeline_version : str
-        Version identifier for the pipeline
     """
     unit_epoch = int(datetime.datetime.now().timestamp())
     unit_epoch_as_datetime = datetime.datetime.fromtimestamp(unit_epoch)
     datetime_now = datetime.datetime.now()
+
+    pipeline_version = session_id.split("_")[-1]
 
     nwbfile = NWBFile(
         session_start_time=unit_epoch_as_datetime,
@@ -211,10 +209,14 @@ def process_single_file(source_path: Path, destination_path: Path) -> dict:
 
         session_start_time = source_nwb.session_start_time
         session_id_parts = session_id.split("_")
-        type_of_data = session_id_parts[-3]
+        type_of_data = session_id_parts[-2]
         pipeline_version = session_id_parts[-1]
         subject = session_id_parts[0]
         project_name = session_id_parts[1]
+
+        if type_of_data not in ["session", "normalizer"]:
+            error_msg = f"Unexpected type of data in session ID: {type_of_data}, from session ID: {session_id}"
+            raise ValueError(error_msg)
 
         # Open destination file
         with NWBHDF5IO(destination_path, mode="a") as dest_io:
@@ -224,13 +226,13 @@ def process_single_file(source_path: Path, destination_path: Path) -> dict:
             file_psth = source_nwb.scratch["psth_pipeline_format"]
             if type_of_data == "session":
                 name = f"psth_session_data_{session_start_time.replace(tzinfo=None)}"
-            else:
+            elif type_of_data == "normalizer":
                 name = f"psth_normalizers_{session_start_time.replace(tzinfo=None)}"
 
             dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
 
             # Add units table
-            add_units_table(source_nwb, dest_nwb, dest_nwb.processing["session_spike_times"], type_of_data)
+            add_units_table(source_nwb, dest_nwb, type_of_data)
 
             dest_io.write(dest_nwb)
 
@@ -241,26 +243,28 @@ def process_single_file(source_path: Path, destination_path: Path) -> dict:
     }
 
 
-def concatenate_nwb_files(
+def aggregate_nwbfiles(
     file_paths: List[Union[str, Path]],
-    output_dir: Union[str, Path],
+    output_folder_path: Union[str, Path],
     pipeline_version: str = "DiLorean",
+    is_unit_valid: np.ndarray = None,
 ) -> Path:
-    """Concatenate multiple NWB files into a single file.
+    """
+    Aggregate multiple NWB files into a single file.
 
-    This function processes multiple NWB files and combines their data into a single file
-    while maintaining memory efficiency. It performs the following steps:
-    1. Creates a new NWB file with metadata from the first file
-    2. Processes each source file individually, appending its data to the output file
-    3. Validates metadata consistency across all files
-    4. Creates and appends a concatenated PSTH combining all session data
+    This function processes the session and normalizer data from single sessions and aggregates them into a single NWB file.
+    that contains the following:
+
+    - Individual PSTHs from each input file
+    - Concatenated PSTH combining all session data across stimuli presentation
+    - Units tables (spike or thresholded data) from each input file
 
     Parameters
     ----------
     file_paths : list of str or Path
         List of paths to the NWB files that should be concatenated. The files should follow
         the naming convention: {subject}_{project_name}_{session_date}_{session_time}_{type_of_data}_data_{pipeline_version}
-    output_dir : str or Path
+    output_folder_path : str or Path
         Directory where the output file will be saved. The output filename will follow the format:
         {subject}_{project_name}_{pipeline_version}.nwb
     pipeline_version : str, optional
@@ -298,7 +302,7 @@ def concatenate_nwb_files(
         - If files are not in the expected pipeline format
     """
     file_paths = [Path(p) for p in file_paths]
-    output_dir = Path(output_dir)
+    output_folder_path = Path(output_folder_path)
 
     # Lists to store metadata
     metadata_list = []
@@ -312,22 +316,23 @@ def concatenate_nwb_files(
         subject = session_id_parts[0]
         project_name = session_id_parts[1]
         pipeline_version = session_id_parts[-1]
-        output_filename = f"{subject}_{project_name}_{pipeline_version}.nwb"
         final_session_id = f"{subject}_{project_name}_{pipeline_version}"
 
     # Create output directory if it doesn't exist
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / output_filename
+    output_folder_path.mkdir(parents=True, exist_ok=True)
+    output_filename = f"{final_session_id}.nwb"
+
+    aggregated_nwbfile_path = output_folder_path / output_filename
 
     # Create destination file with proper session ID
-    create_destination_nwbfile(output_path, final_session_id, pipeline_version)
+    create_destination_nwbfile(aggregated_nwbfile_path, final_session_id)
 
     # Process each file
     from tqdm.auto import tqdm
 
     for file_path in tqdm(file_paths, desc="Processing files", unit="file"):
         tqdm.write(f"Processing: {file_path.name}")
-        metadata = process_single_file(file_path, output_path)
+        metadata = process_single_file(file_path, aggregated_nwbfile_path)
         metadata_list.append(metadata)
 
     # Extract metadata lists for validation
@@ -345,7 +350,7 @@ def concatenate_nwb_files(
 
     # Final pass: Read all session PSTHs and add concatenated data
     tqdm.write("Concatenating session PSTHs...")
-    with NWBHDF5IO(output_path, mode="a") as io:
+    with NWBHDF5IO(aggregated_nwbfile_path, mode="a") as io:
         nwbfile = io.read()
 
         # Collect all session PSTHs
@@ -356,6 +361,20 @@ def concatenate_nwb_files(
 
         # Create and add concatenated PSTH
         concatenated_psth = np.concatenate(session_psths, axis=2)
+
+        # Filter units using is_unit_valid array
+        if is_unit_valid is not None:
+            number_of_units = concatenated_psth.shape[0]
+            if number_of_units != is_unit_valid.shape[0]:
+                raise ValueError(
+                    f"Dimension mismatch in unit validation arrays:\n"
+                    f"Number of units in PSTH: {number_of_units}\n"
+                    f"Number of units in validity array: {is_unit_valid.shape[0]}\n"
+                    f"These dimensions must match for proper unit-wise validation.\n"
+                    "Please ensure both arrays contain the same number of units."
+                )
+            concatenated_psth = concatenated_psth[is_unit_valid, ...]
+
         nwbfile.add_scratch(
             concatenated_psth,
             name="psth_session_data_concatenated",
@@ -364,21 +383,4 @@ def concatenate_nwb_files(
 
         io.write(nwbfile)
 
-    return output_path
-
-
-if __name__ == "__main__":
-    # Example file paths
-    data_folder = Path("/media/heberto/One Touch/DiCarlo-CN-data-share")
-    output_dir = data_folder / "nwb_files"
-
-    # Get list of NWB files
-    nwb_files = [path for path in output_dir.iterdir() if path.suffix == ".nwb"]
-
-    # Concatenate files
-    output_path = concatenate_nwb_files(file_paths=nwb_files, output_dir=output_dir)
-
-    # Verify the output
-    concatenated_file = load_nwb_file(output_path)
-    print(f"Successfully created concatenated file at: {output_path}")
-    print(f"Concatenated PSTH shape: {concatenated_file.scratch['psth_session_data_concatenated'].data.shape}")
+    return aggregated_nwbfile_path
