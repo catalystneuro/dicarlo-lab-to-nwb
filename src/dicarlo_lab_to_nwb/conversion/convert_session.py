@@ -103,31 +103,34 @@ def convert_session_to_nwb(
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
     conversion_options["Behavior"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
-    # Add Stimuli Interface
-    if stimuli_are_video:
-        stimuli_interface = StimuliVideoInterface(
-            file_path=mworks_processed_file_path,
-            folder_path=stimuli_folder,
-            image_set_name=session_id,
-            # video_copy_path=output_dir_path / "videos",
-            video_copy_path=None,  # Add a path if videos should be copied
-            verbose=verbose,
-        )
-    else:
-        stimuli_interface = StimuliImagesInterface(
-            file_path=mworks_processed_file_path,
-            folder_path=stimuli_folder,
-            image_set_name=session_id,
-            verbose=verbose,
-        )
+
     conversion_options["Stimuli"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
 
     # Build the converter pipe with the previously defined data interfaces
     data_interfaces_dict = {
         "Ecephys": ecephys_interface,
         "Behavior": behavioral_trials_interface,
-        "Stimuli": stimuli_interface,
     }
+
+    # Add Stimuli Interface
+    if add_stimuli_media_to_nwb:
+        if stimuli_are_video:
+            stimuli_interface = StimuliVideoInterface(
+                file_path=mworks_processed_file_path,
+                folder_path=stimuli_folder,
+                image_set_name=project_name,
+                # video_copy_path=output_dir_path / "videos",
+                video_copy_path=None,  # Add a path if videos should be copied
+                verbose=verbose,
+            )
+        else:
+            stimuli_interface = StimuliImagesInterface(
+                file_path=mworks_processed_file_path,
+                folder_path=stimuli_folder,
+                image_set_name=project_name,
+                verbose=verbose,
+            )
+
     converter_pipe = ConverterPipe(data_interfaces=data_interfaces_dict, verbose=verbose)
 
     # Parse the string into a datetime object
