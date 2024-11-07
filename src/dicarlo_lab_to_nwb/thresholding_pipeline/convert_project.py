@@ -1,15 +1,22 @@
-import yaml
 import time
 from datetime import datetime
 from pathlib import Path
-from dicarlo_lab_to_nwb.thresholding_pipeline.data_locator import locate_session_paths
-from dicarlo_lab_to_nwb.thresholding_pipeline.parse_mworks_RSVP import parse_mworks_file
-from dicarlo_lab_to_nwb.thresholding_pipeline.convert_session import convert_session_to_nwb
-from pynwb import NWBHDF5IO
+
 import numpy as np
-from dicarlo_lab_to_nwb.conversion.quality_control.latency import get_unit_latencies_from_reliabilities
-from dicarlo_lab_to_nwb.conversion.quality_control.reliability import get_NRR, get_p_values
 import pandas as pd
+import yaml
+from pynwb import NWBHDF5IO
+
+from dicarlo_lab_to_nwb.conversion.convert_session import convert_session_to_nwb
+from dicarlo_lab_to_nwb.conversion.quality_control.latency import (
+    get_unit_latencies_from_reliabilities,
+)
+from dicarlo_lab_to_nwb.conversion.quality_control.reliability import (
+    get_NRR,
+    get_p_values,
+)
+from dicarlo_lab_to_nwb.thresholding_pipeline.parse_mworks_RSVP import parse_mworks_file
+
 
 # Recursive function to parse YAML content
 def parse_yaml_recursively(data):
@@ -19,11 +26,11 @@ def parse_yaml_recursively(data):
         for key, value in data.items():
             parsed_data[key] = parse_yaml_recursively(value)
         return parsed_data
-    
+
     # Check if the data is a list
     elif isinstance(data, list):
         return [parse_yaml_recursively(item) for item in data]
-    
+
     # If it's neither dict nor list, it's a base case (string, int, etc.)
     else:
         return data
@@ -40,7 +47,7 @@ def convert_project_sessions(project_config_path: str | Path):
         except yaml.YAMLError as exc:
             print(exc)
     parsed_result = parse_yaml_recursively(yaml_content)
-        
+
     # GLOBAL VARIABLES
     # TODO: put this in a config file
     subject = "Apollo"
@@ -51,7 +58,7 @@ def convert_project_sessions(project_config_path: str | Path):
     add_thresholding_events = True
     add_psth = True
     stimuli_are_video = False
-    add_raw_amplifier_data = False
+    add_amplifier_data_to_nwb = False
     add_psth_in_pipeline_format_to_nwb = True
 
     thresholindg_pipeline_kwargs = {
@@ -68,7 +75,6 @@ def convert_project_sessions(project_config_path: str | Path):
 
     # This is the ground truth time column for the stimuli in the mworks csv file
     ground_truth_time_column = "samp_on_us"
-
 
     # project-level information
     project_info = parsed_result.get("project", {})
@@ -108,7 +114,7 @@ def convert_project_sessions(project_config_path: str | Path):
             print(f"  - MWorks Folder: {mworks_folder}")
             print(f"  - Data Folder: {data_folder}")
             print(f"  - Notes: {notes}\n")
-            
+
             # session info
             session_metadata = {
                 "project_name": project,
@@ -118,7 +124,9 @@ def convert_project_sessions(project_config_path: str | Path):
             }
 
             # Extract stimulus/behavioral events from MWorks files
-            mworks_processed_file_path = parse_mworks_file(mworks_folder, data_folder, mworks_folder) # save MWorks results in the same folder
+            mworks_processed_file_path = parse_mworks_file(
+                mworks_folder, data_folder, mworks_folder
+            )  # save MWorks results in the same folder
             print(f"  - MWorks processed file saved to: {mworks_processed_file_path}")
 
             session_nwb_filepath = convert_session_to_nwb(
@@ -135,26 +143,26 @@ def convert_project_sessions(project_config_path: str | Path):
                 add_psth=add_psth,
                 stimuli_are_video=stimuli_are_video,
                 ground_truth_time_column=ground_truth_time_column,
-                add_raw_amplifier_data=add_raw_amplifier_data,
+                add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
                 add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
             )
 
             # add quality control if stimulus_name contains "normalizer"
             if "normalizer" in stimulus_name:
-                with NWBHDF5IO(session_nwb_filepath, mode='r') as io:
+                with NWBHDF5IO(session_nwb_filepath, mode="r") as io:
                     nwbfile = io.read()
                     psth = nwbfile.scratch["psth_pipeline_format"].data[:]
                     n_units, n_stimuli, n_reps, n_timebins = psth.shape
                     df = nwbfile.electrodes.to_dataframe()
                     channel_names = df["channel_name"].values
 
-                    binned_spikes = nwbfile.processing['ecephys']['BinnedAlignedSpikesToStimulus']
+                    binned_spikes = nwbfile.processing["ecephys"]["BinnedAlignedSpikesToStimulus"]
                     psth_timebin_ms = binned_spikes.bin_width_in_milliseconds
-                    psth_0 = binned_spikes.milliseconds_from_event_to_first_bin 
+                    psth_0 = binned_spikes.milliseconds_from_event_to_first_bin
                     psth_1 = psth_0 + psth_timebin_ms * n_timebins - psth_timebin_ms
                     psth_timebins_s = np.linspace(psth_0, psth_1, n_timebins) / 1e3
                     latencies_s = get_unit_latencies_from_reliabilities(psth, psth_timebins_s)
-                
+
                     trial_df = nwbfile.intervals["trials"].to_dataframe()
                     stim_duration_s = trial_df["stimuli_presentation_time_ms"].unique()[0] / 1e3
                     stim_size_deg = trial_df["stimulus_size_degrees"].unique()[0]
@@ -171,10 +179,13 @@ def convert_project_sessions(project_config_path: str | Path):
                         intg_window_idx = [np.argmin(np.abs(psth_timebins_s - t)) for t in intg_window]
 
                         psth_unit = psth[i]
-                        rates[i,:,:] = np.sum(psth_unit[..., intg_window_idx[0]:intg_window_idx[1]], axis=-1) / intg_window_size_s
+                        rates[i, :, :] = (
+                            np.sum(psth_unit[..., intg_window_idx[0] : intg_window_idx[1]], axis=-1)
+                            / intg_window_size_s
+                        )
                         # average rates across all dimensions except the first one
                         mean_rates[i] = np.nanmean(rates[i])
-                
+
                     # p values
                     p_values = get_p_values(rates)
                     p_thresh = 0.05
@@ -190,22 +201,23 @@ def convert_project_sessions(project_config_path: str | Path):
                     srr_samples = get_NRR(rates, n_reps=2, correction=False)
                     srr_mean_values = np.nanmean(srr_samples, axis=-1)
                     print(f"SRR mean (valid units): {np.mean(srr_mean_values[valid_units])}")
-                
+
                     # save results to a dataframe
-                    df = pd.DataFrame({
-                        "channel_name": channel_names,
-                        "p_value": p_values,
-                        "valid_unit": valid_units,
-                        "mean_rate": mean_rates,
-                        "response_latency_ms": latencies_s,
-                        "half_split_reliability": rhos_mean_values,
-                        "single_repeat_reliability": srr_mean_values,
-                    })
+                    df = pd.DataFrame(
+                        {
+                            "channel_name": channel_names,
+                            "p_value": p_values,
+                            "valid_unit": valid_units,
+                            "mean_rate": mean_rates,
+                            "response_latency_ms": latencies_s,
+                            "half_split_reliability": rhos_mean_values,
+                            "single_repeat_reliability": srr_mean_values,
+                        }
+                    )
                     csv_filepath = session_nwb_filepath.parent / f"{nwbfile.session_id}_QC.csv"
                     df.to_csv(csv_filepath, index=False)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     example_project_config = Path(__file__).parent / "project_config.yaml"
     convert_project_sessions(example_project_config)
-        
-    

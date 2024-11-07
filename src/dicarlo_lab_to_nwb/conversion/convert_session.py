@@ -75,6 +75,9 @@ def convert_session_to_nwb(
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
     # session_id defines the name of the NWB file
+    # Break this down so recording_id is separated int its components, consideer using a camel case veersion
+    # Of all the components like this example:
+    # project_name_camel_case = "".join([word.capitalize() for word in project_name.split("_")])
     session_id = f"{project_name}_{subject}_{recording_id}_{pipeline_version}_thresholded"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
