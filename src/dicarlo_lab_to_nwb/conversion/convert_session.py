@@ -131,6 +131,8 @@ def convert_session_to_nwb(
                 image_set_name=project_name,
                 verbose=verbose,
             )
+
+        conversion_options["Stimuli"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
         data_interfaces_dict["Stimuli"] = stimuli_interface
 
     converter_pipe = ConverterPipe(data_interfaces=data_interfaces_dict, verbose=verbose)
