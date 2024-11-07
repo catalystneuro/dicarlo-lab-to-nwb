@@ -40,6 +40,7 @@ def convert_session_to_nwb(
     add_thresholding_events: bool = False,
     add_psth: bool = False,
     stimuli_are_video: bool = False,
+    add_stimuli_media_to_nwb: bool = False,
     thresholindg_pipeline_kwargs: dict = None,
     psth_kwargs: dict = None,
     ground_truth_time_column: str = "samp_on_us",
@@ -130,6 +131,7 @@ def convert_session_to_nwb(
                 image_set_name=project_name,
                 verbose=verbose,
             )
+        data_interfaces_dict["Stimuli"] = stimuli_interface
 
     converter_pipe = ConverterPipe(data_interfaces=data_interfaces_dict, verbose=verbose)
 
