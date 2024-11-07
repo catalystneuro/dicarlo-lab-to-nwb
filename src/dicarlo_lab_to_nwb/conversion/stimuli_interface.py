@@ -171,27 +171,64 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         columns = mwkorks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
         image_presentation_time_seconds = mwkorks_df[ground_truth_time_column] / 1e6
-        stimulus_ids = mwkorks_df["stimulus_presented"]
+        stimulus_indices = mwkorks_df["stimulus_presented"].to_list()
+        stimulus_filenames = mwkorks_df["stimulus_filename"].to_list()
+        stimulus_hashes = mwkorks_df["image_hash"].to_list()
 
-        unique_stimulus_ids = stimulus_ids.unique()
-        unique_stimulus_ids.sort()
+        # stimulus size and durations are constant for all images
+        stimulus_on_s = np.unique(mwkorks_df["stim_on_time_ms"]) / 1e3
+        stimulus_off_s = np.unique(mwkorks_df["stim_off_time_ms"]) / 1e3
+        stimulus_size_deg = np.unique(mwkorks_df["stimulus_size_degrees"])
+
+        # Generate unique lists from the above example while preserving the order of the unique values from the first list (stimulus_indices)
+        seen = set() # Initialize an empty set to track seen values from list1
+
+        # Initialize empty lists to store the unique values
+        uniq_stim_indices = []
+        uniq_stim_filenames = []
+        uniq_stim_hashes = []
+
+        # Iterate through the lists and preserve unique values based on list1
+        for l1, l2, l3 in zip(stimulus_indices, stimulus_filenames, stimulus_hashes):
+            if l1 not in seen:
+                uniq_stim_indices.append(l1)
+                uniq_stim_filenames.append(l2)
+                uniq_stim_hashes.append(l3)
+                seen.add(l1)
+
+        # Sort the paired lists based on the first list (stimulus_indices)
+        paired_uniq_lists = list(zip(uniq_stim_indices, uniq_stim_filenames, uniq_stim_hashes))
+        paired_uniq_lists.sort()
+        uniq_stim_indices, uniq_stim_filenames, uniq_stim_hashes = zip(*paired_uniq_lists)
+        assert len(uniq_stim_indices) == len(uniq_stim_filenames), "Stimulus indices and filenames do not match"
 
         image_list = []
         image_mode_to_nwb_class = {"L": GrayscaleImage, "RGB": RGBImage, "RGBA": RGBAImage}
 
-        for stimulus_id in tqdm(
-            unique_stimulus_ids, desc="Processing images", unit=" images", disable=not self.verbose
-        ):
-            image_name = f"img{stimulus_id + 1}"
-            image_file_path = self.stimuli_folder / f"{image_name}.png"
+        for idx, stim_filename in enumerate(tqdm(
+            uniq_stim_filenames, desc="Processing images", unit=" images", disable=not self.verbose
+        )):
+            image_filename = stim_filename
+            image_hash = uniq_stim_hashes[idx]
+            image_file_path = self.stimuli_folder / f"{image_filename}"
             assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
-            iter_data = SingleImageIterator(filename=image_file_path)
-            image_class = image_mode_to_nwb_class[iter_data.image_mode]
+            image = Image.open(image_file_path)
+            image_array = np.array(image)
+            # image_array = np.rot90(image_array, k=3)
+            image_kwargs = dict(name=image_name, data=image_array, description="stimuli_image")
+            if image_array.ndim == 2:
+                image = GrayscaleImage(**image_kwargs)
+            elif image_array.ndim == 3:
+                if image_array.shape[2] == 3:
+                    image = RGBImage(**image_kwargs)
+                elif image_array.shape[2] == 4:
+                    image = RGBAImage(**image_kwargs)
+                else:
+                    raise ValueError(f"Image array has unexpected number of channels: {image_array.shape[2]}")
+            else:
+                raise ValueError(f"Image array has unexpected dimensions: {image_array.ndim}")
 
-            image_kwargs = dict(name=image_name, data=iter_data, description="stimuli_image")
-            image_object = image_class(**image_kwargs)
-
-            image_list.append(image_object)
+            image_list.append(image)
 
         images_container = Images(
             name="stimuli",
@@ -205,8 +242,8 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         indexed_images = nwbfile.stimulus["stimuli"]
 
         # Add the stimulus presentation index
-        stimulus_id_to_index = {stimulus_id: index for index, stimulus_id in enumerate(unique_stimulus_ids)}
-        data = np.asarray([stimulus_id_to_index[stimulus_id] for stimulus_id in stimulus_ids], dtype=np.uint32)
+        stimulus_id_to_index = {stimulus_id: index for index, stimulus_id in enumerate(uniq_stim_indices)}
+        data = np.asarray([stimulus_id_to_index[stimulus_id] for stimulus_id in stimulus_indices], dtype=np.uint32)
         index_series = IndexSeries(
             name="stimulus_presentation",
             data=data,
