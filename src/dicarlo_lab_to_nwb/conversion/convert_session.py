@@ -44,7 +44,7 @@ def convert_session_to_nwb(
     thresholindg_pipeline_kwargs: dict = None,
     psth_kwargs: dict = None,
     ground_truth_time_column: str = "samp_on_us",
-    add_raw_amplifier_data: bool = False,
+    add_amplifier_data_to_nwb: bool = False,
     probe_info_path: str | Path | None = None,
     add_psth_in_pipeline_format_to_nwb: bool = True,
 ) -> Path:
@@ -83,7 +83,7 @@ def convert_session_to_nwb(
 
     conversion_options = dict()
 
-    if add_raw_amplifier_data:
+    if add_amplifier_data_to_nwb:
         ecephys_interface = IntanRecordingInterface(file_path=intan_file_path, ignore_integrity_checks=True)
         attach_probe_to_recording(recording=ecephys_interface.recording_extractor)
         if stub_test:
@@ -187,7 +187,7 @@ def convert_session_to_nwb(
         noise_threshold = thresholindg_pipeline_kwargs.get("noise_threshold", None)
         job_kwargs = thresholindg_pipeline_kwargs.get("job_kwargs", None)
 
-        if add_raw_amplifier_data:
+        if add_amplifier_data_to_nwb:
             file_path = nwbfile_path
         else:
             file_path = intan_file_path
@@ -262,13 +262,13 @@ def convert_session_to_nwb(
 
     if verbose:
         total_stop = time.time()
-        total_scrip_time = total_stop - total_start
-        if total_scrip_time <= 60 * 3:
-            print(f"Total script took {total_scrip_time:.2f} seconds")
-        elif total_scrip_time <= 60 * 60:
-            print(f"Total script took {total_scrip_time / 60:.2f} minutes")
+        total_script_time = total_stop - total_start
+        if total_script_time <= 60 * 3:
+            print(f"Total script took {total_script_time:.2f} seconds")
+        elif total_script_time <= 60 * 60:
+            print(f"Total script took {total_script_time / 60:.2f} minutes")
         else:
-            print(f"Total script took {total_scrip_time / 60 / 60:.2f} hours")
+            print(f"Total script took {total_script_time / 60 / 60:.2f} hours")
 
         print("\n \n")
 
