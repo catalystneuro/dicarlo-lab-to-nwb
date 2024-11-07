@@ -1,12 +1,16 @@
 import os
 import sys
+
+# from mwk2reader import MWKFile
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
+
 # import scipy.io as sio
 from dicarlo_lab_to_nwb.mworks_library.mwk2reader import MWKFile
-# from mwk2reader import MWKFile
-from pathlib import Path
+
 # import matplotlib.pyplot as plt
 
 
@@ -20,164 +24,170 @@ def listify_events(events):
 
 def get_events(event_file, name):
     data = {
-        'code': [],
-        'name': [],
-        'time': [],
-        'data': [],
+        "code": [],
+        "name": [],
+        "time": [],
+        "data": [],
     }
     for event in event_file.get_events_iter(codes=name):
-        data['code'].append(event.code)
-        data['name'].append(event_file.codec[event.code])
-        data['time'].append(event.time)
-        data['data'].append(event.data)
+        data["code"].append(event.code)
+        data["name"].append(event_file.codec[event.code])
+        data["time"].append(event.time)
+        data["data"].append(event.data)
     data = pd.DataFrame(data)
-    data = data.sort_values(by='time').reset_index(drop=True)
+    data = data.sort_values(by="time").reset_index(drop=True)
     return data
 
 
-def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_event_filepath, output_dir: str = './'):
+def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_event_filepath, output_dir: str = "./"):
     print(f"Sampling rate: {SAMPLING_FREQUENCY_HZ}, {filename}")
 
     event_file = MWKFile(filename)
     event_file.open()
-    names = ['trial_start_line',
-                'correct_fixation',
-                'stimulus_presented',
-                'stim_on_time',
-                'stim_off_time',
-                'stim_on_delay',
-                'stimulus_size_deg', 
-                'fixation_window_size',
-                'fixation_point_size_min']
-    
+    names = [
+        "trial_start_line",
+        "correct_fixation",
+        "stimulus_presented",
+        "stim_on_time",
+        "stim_off_time",
+        "stim_on_delay",
+        "stimulus_size_deg",
+        "fixation_window_size",
+        "fixation_point_size_min",
+    ]
+
     ###########################################################################
     # Create a dict to store output information
     ###########################################################################
     data = get_events(event_file=event_file, name=names)
     # if there is no stimulus_size_deg, then it is an older version of the RSVP mworks code
-    if 'stimulus_size_deg' not in data.name.values:
-        print('Warning: Using older version of RSVP mworks code')
+    if "stimulus_size_deg" not in data.name.values:
+        print("Warning: Using older version of RSVP mworks code")
         # Variables we'd like to fetch data for
-        names = ['trial_start_line',
-                'correct_fixation',
-                'stimulus_presented',
-                'stim_on_time',
-                'stim_off_time',
-                'stim_on_delay',
-                'stimulus_size', # for older versions of RSVP mworks code
-                'fixation_window_size',
-                'fixation_point_size_min']
+        names = [
+            "trial_start_line",
+            "correct_fixation",
+            "stimulus_presented",
+            "stim_on_time",
+            "stim_off_time",
+            "stim_on_delay",
+            "stimulus_size",  # for older versions of RSVP mworks code
+            "fixation_window_size",
+            "fixation_point_size_min",
+        ]
         # data = get_events(event_file=event_file, name=names)
         # event_file.close()
 
         output = {
-            'stim_on_time_ms': data[data.name == 'stim_on_time']['data'].values[-1] / 1000.,
-            'stim_off_time_ms': data[data.name == 'stim_off_time']['data'].values[-1] / 1000.,
-            'stim_on_delay_ms': data[data.name == 'stim_on_delay']['data'].values[-1] / 1000.,
-            'stimulus_size_degrees': data[data.name == 'stimulus_size']['data'].values[-1], # for older versions
+            "stim_on_time_ms": data[data.name == "stim_on_time"]["data"].values[-1] / 1000.0,
+            "stim_off_time_ms": data[data.name == "stim_off_time"]["data"].values[-1] / 1000.0,
+            "stim_on_delay_ms": data[data.name == "stim_on_delay"]["data"].values[-1] / 1000.0,
+            "stimulus_size_degrees": data[data.name == "stimulus_size"]["data"].values[-1],  # for older versions
             # 'stimulus_size_degrees': data[data.name == 'stimulus_size']['data'].values[-1], # for 'normalizers'
             # 'fixation_window_size_degrees': data[data.name == 'fixation_window_size']['data'].values[-1],
             # 'fixation_point_size_degrees': data[data.name == 'fixation_point_size_min']['data'].values[-1],
-            }
-    else:
-        
-        output = {
-        'stim_on_time_ms': data[data.name == 'stim_on_time']['data'].values[-1] / 1000.,
-        'stim_off_time_ms': data[data.name == 'stim_off_time']['data'].values[-1] / 1000.,
-        'stim_on_delay_ms': data[data.name == 'stim_on_delay']['data'].values[-1] / 1000.,
-        'stimulus_size_degrees': data[data.name == 'stimulus_size_deg']['data'].values[-1], # for 'gestalt_control' & 'SFM_*'
-        # 'fixation_window_size_degrees': data[data.name == 'fixation_window_size']['data'].values[-1],
-        # 'fixation_point_size_degrees': data[data.name == 'fixation_point_size_min']['data'].values[-1],
         }
-   
-    
+    else:
+
+        output = {
+            "stim_on_time_ms": data[data.name == "stim_on_time"]["data"].values[-1] / 1000.0,
+            "stim_off_time_ms": data[data.name == "stim_off_time"]["data"].values[-1] / 1000.0,
+            "stim_on_delay_ms": data[data.name == "stim_on_delay"]["data"].values[-1] / 1000.0,
+            "stimulus_size_degrees": data[data.name == "stimulus_size_deg"]["data"].values[
+                -1
+            ],  # for 'gestalt_control' & 'SFM_*'
+            # 'fixation_window_size_degrees': data[data.name == 'fixation_window_size']['data'].values[-1],
+            # 'fixation_point_size_degrees': data[data.name == 'fixation_point_size_min']['data'].values[-1],
+        }
 
     ###########################################################################
     # Add column in data to indicate whether stimulus was first in trial or not
     ###########################################################################
-    data['first_in_trial'] = False
+    data["first_in_trial"] = False
     # Filter data to only get `trial_start_line` and `stimulus_presented` information
-    df = data[(data.name == 'trial_start_line') | ((data.name == 'stimulus_presented') & (data.data != -1))]
+    df = data[(data.name == "trial_start_line") | ((data.name == "stimulus_presented") & (data.data != -1))]
     # Extract `time` for the first `stimulus_presented` (which is right after `trial_start_line` has been pulsed)
-    first_in_trial_times = [df.time.values[i] for i in range(1, len(df))
-                            if ((df.name.values[i - 1] == 'trial_start_line') and
-                                (df.name.values[i] == 'stimulus_presented'))]
-    data['first_in_trial'] = data['time'].apply(lambda x: True if x in first_in_trial_times else False)
+    first_in_trial_times = [
+        df.time.values[i]
+        for i in range(1, len(df))
+        if ((df.name.values[i - 1] == "trial_start_line") and (df.name.values[i] == "stimulus_presented"))
+    ]
+    data["first_in_trial"] = data["time"].apply(lambda x: True if x in first_in_trial_times else False)
 
     ###########################################################################
     # Extract stimulus presentation order and fixation information
     ###########################################################################
-    stimulus_presented_df = data[data.name == 'stimulus_presented'].reset_index(drop=True)
-    correct_fixation_df = data[data.name == 'correct_fixation'].reset_index(drop=True)
+    stimulus_presented_df = data[data.name == "stimulus_presented"].reset_index(drop=True)
+    correct_fixation_df = data[data.name == "correct_fixation"].reset_index(drop=True)
 
     # If you have one extra stimulus event but not fixation, use this
     if len(correct_fixation_df) < len(stimulus_presented_df):
-        stimulus_presented_df = stimulus_presented_df[:len(correct_fixation_df)]  
-    # stimulus_presented_df = stimulus_presented_df[:len(correct_fixation_df)]  
-    
+        stimulus_presented_df = stimulus_presented_df[: len(correct_fixation_df)]
+    # stimulus_presented_df = stimulus_presented_df[:len(correct_fixation_df)]
+
     assert len(stimulus_presented_df) == len(correct_fixation_df)
-    
+
     # Drop `empty` data (i.e. -1) before the experiment actually began and after it had already ended
     correct_fixation_df = correct_fixation_df[stimulus_presented_df.data != -1].reset_index(drop=True)
     stimulus_presented_df = stimulus_presented_df[stimulus_presented_df.data != -1].reset_index(drop=True)
     # Add `first_in_trial` info to other data frame too
-    correct_fixation_df['first_in_trial'] = stimulus_presented_df['first_in_trial']
+    correct_fixation_df["first_in_trial"] = stimulus_presented_df["first_in_trial"]
 
     ###########################################################################
     # Add column to indicate order in trial (1 2 3 1 2 3 etc.)
     ###########################################################################
     assert stimulus_presented_df.iloc[0].first_in_trial
-    stimulus_presented_df['stimulus_order_in_trial'] = ''
+    stimulus_presented_df["stimulus_order_in_trial"] = ""
     counter = 1
     for index, row in stimulus_presented_df.iterrows():
-        if row['first_in_trial']:
+        if row["first_in_trial"]:
             counter = 1
-        stimulus_presented_df.at[index, 'stimulus_order_in_trial'] = counter
+        stimulus_presented_df.at[index, "stimulus_order_in_trial"] = counter
         counter += 1
-    correct_fixation_df['stimulus_order_in_trial'] = stimulus_presented_df['stimulus_order_in_trial']
+    correct_fixation_df["stimulus_order_in_trial"] = stimulus_presented_df["stimulus_order_in_trial"]
 
     ###########################################################################
     # Read sample on file
     ###########################################################################
-    fid = open(digi_event_filepath, 'rb')
+    fid = open(digi_event_filepath, "rb")
     filesize = os.path.getsize(filename)  # in bytes
     num_samples = filesize // 2  # uint16 = 2 bytes
-    digital_in = np.fromfile(fid, 'uint16', num_samples)
+    digital_in = np.fromfile(fid, "uint16", num_samples)
     fid.close()
 
-    samp_on, = np.nonzero(digital_in[:-1] < digital_in[1:])  # Look for 0->1 transitions
+    (samp_on,) = np.nonzero(digital_in[:-1] < digital_in[1:])  # Look for 0->1 transitions
     samp_on = samp_on + 1  # Previous line returns indexes of 0s seen before spikes, but we want indexes of first spikes
 
     if len(stimulus_presented_df) > len(samp_on):
-        print(f'Warning: Trimming MWorks files as ({len(stimulus_presented_df)} > {len(samp_on)})')
-        stimulus_presented_df = stimulus_presented_df[:len(samp_on)]
-        correct_fixation_df = correct_fixation_df[:len(samp_on)]
+        print(f"Warning: Trimming MWorks files as ({len(stimulus_presented_df)} > {len(samp_on)})")
+        stimulus_presented_df = stimulus_presented_df[: len(samp_on)]
+        correct_fixation_df = correct_fixation_df[: len(samp_on)]
 
     # print(f"samp_on: {len(samp_on)}")
     # print(f"stimulus_presented_df: {len(stimulus_presented_df)}")
     # samp_on = samp_on[:len(correct_fixation_df)]   # If you have one extra stimulus event but not fixation, use this
     if len(correct_fixation_df) < len(samp_on):
-        samp_on = samp_on[:len(correct_fixation_df)]
-        
+        samp_on = samp_on[: len(correct_fixation_df)]
+
     assert len(samp_on) == len(stimulus_presented_df)
 
     ###########################################################################
     # Read photodiode file
     ###########################################################################
-    fid = open(photodiode_filepath, 'rb')
+    fid = open(photodiode_filepath, "rb")
     filesize = os.path.getsize(photodiode_filepath)  # in bytes
     num_samples = filesize // 2  # uint16 = 2 bytes
-    v = np.fromfile(fid, 'uint16', num_samples)
+    v = np.fromfile(fid, "uint16", num_samples)
     fid.close()
 
     # Convert to volts (use this if the data file was generated by Recording Controller)
     # v = (v - 32768) * 0.0003125
     v = v * 0.195
-    
+
     upper_quantile = np.quantile(v, 0.75)
     lower_quantile = np.quantile(v, 0.25)
     v_range = upper_quantile - lower_quantile
-    
+
     thresh = v_range * 0.5 + lower_quantile
 
     # plot the photodiode signal for the first 10 seconds
@@ -185,10 +195,10 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     # plt.plot(v[int(10*SAMPLING_FREQUENCY_HZ) : int(60*SAMPLING_FREQUENCY_HZ)])
     # plt.plot([int(10*SAMPLING_FREQUENCY_HZ), int(60*SAMPLING_FREQUENCY_HZ)], [thresh, thresh], 'r--')
     # plt.show()
-    
+
     v_digi = np.zeros(np.size(v))
     v_digi[v > thresh] = 1
-    v_on, = np.nonzero(v_digi[:-1] < v_digi[1:])  # Look for 0->1 transitions
+    (v_on,) = np.nonzero(v_digi[:-1] < v_digi[1:])  # Look for 0->1 transitions
     v_on = v_on + 1  # Previous line returns indexes of 0s seen before spikes, but we want indexes of first spikes
     photodiode_on = np.asarray([min(v_on[(v_on >= s) & (v_on < (s + 100_000))]) for s in samp_on])
 
@@ -200,12 +210,11 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     # Correct the times
     ###########################################################################
     corrected_time = stimulus_presented_df.time.values.tolist() + (photodiode_on - samp_on)  # Both are in microseconds
-    print(f'Delay recorded on photodiode is {np.mean(photodiode_on - samp_on) / 1000.:.2f} ms on average')
+    print(f"Delay recorded on photodiode is {np.mean(photodiode_on - samp_on) / 1000.:.2f} ms on average")
 
-    stimulus_presented_df['time'] = corrected_time
-    correct_fixation_df['time'] = corrected_time
+    stimulus_presented_df["time"] = corrected_time
+    correct_fixation_df["time"] = corrected_time
 
-    
     # # Print any times differences between digital signal and photodiode that are atrociously huge (>40ms)
     # for i, x in enumerate(photodiode_on - samp_on):
     #     if x / 1000. > 40:
@@ -217,11 +226,11 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     eye_h, eye_v, eye_time = [], [], []
     pupil_size, pupil_time = [], []
     for t in stimulus_presented_df.time.values:
-        t1 = int(t - 50 * 1000.)  # Start time (ms)
-        t2 = int(t + (output['stim_on_time_ms'] + 50) * 1000.)  # Stop time (ms)
-        h = [event.data for event in event_file.get_events_iter(codes=['eye_h'], time_range=[t1, t2])]
-        v = [event.data for event in event_file.get_events_iter(codes=['eye_v'], time_range=[t1, t2])]
-        time = [(event.time - t) / 1000. for event in event_file.get_events_iter(codes=['eye_v'], time_range=[t1, t2])]
+        t1 = int(t - 50 * 1000.0)  # Start time (ms)
+        t2 = int(t + (output["stim_on_time_ms"] + 50) * 1000.0)  # Stop time (ms)
+        h = [event.data for event in event_file.get_events_iter(codes=["eye_h"], time_range=[t1, t2])]
+        v = [event.data for event in event_file.get_events_iter(codes=["eye_v"], time_range=[t1, t2])]
+        time = [(event.time - t) / 1000.0 for event in event_file.get_events_iter(codes=["eye_v"], time_range=[t1, t2])]
         assert len(h) == len(v)
         assert len(time) == len(h)
         eye_h.append(h)
@@ -258,23 +267,25 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     ###########################################################################
     # Save output
     ###########################################################################
-    output['stimulus_presented'] = stimulus_presented_df.data.values.tolist()
-    output['fixation_correct'] = correct_fixation_df.data.values.tolist()
-    output['stimulus_order_in_trial'] = stimulus_presented_df.stimulus_order_in_trial.values.tolist()
+    output["stimulus_presented"] = stimulus_presented_df.data.values.tolist()
+    output["fixation_correct"] = correct_fixation_df.data.values.tolist()
+    output["stimulus_order_in_trial"] = stimulus_presented_df.stimulus_order_in_trial.values.tolist()
     # output['eye_h_degrees'] = eye_h
     # output['eye_v_degrees'] = eye_v
     # output['eye_time_ms'] = eye_time
-    output['samp_on_us'] = samp_on.astype(int)  # Convert to int okay only if times are in microseconds
-    output['photodiode_on_us'] = photodiode_on.astype(int)  # Convert to int okay only if times are in microseconds
-    output['rig_delays_us'] = (photodiode_on - samp_on).astype(int)
+    output["samp_on_us"] = samp_on.astype(int)  # Convert to int okay only if times are in microseconds
+    output["photodiode_on_us"] = photodiode_on.astype(int)  # Convert to int okay only if times are in microseconds
+    output["rig_delays_us"] = (photodiode_on - samp_on).astype(int)
     # output['pupil_size_degrees'] = pupil_size
     # output['pupil_time_ms'] = pupil_time
 
     # save to processed folder
     output = pd.DataFrame(output)
-    output_filepath = os.path.join(output_dir, str(filename).split('/')[-1][:-5] + '_mwk.csv')  # -5 in filename to delete the .mwk2 extension
+    output_filepath = os.path.join(
+        output_dir, str(filename).split("/")[-1][:-5] + "_mwk.csv"
+    )  # -5 in filename to delete the .mwk2 extension
     # output.to_csv(filename.split('/')[-1][:-5] + '_mwk.csv', index=False)  # -5 in filename to delete the .mwk2 extension
-    output.to_csv(output_filepath, index=False) 
+    output.to_csv(output_filepath, index=False)
 
     # # save another to raw folder (for buildign psths)
     # data_folder = Path(photodiode_filepath).parent
@@ -284,12 +295,18 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     ###########################################################################
     # Repetitions
     ###########################################################################
-    selected_indexes = correct_fixation_df[correct_fixation_df.data == 1]['data'].index.tolist()
+    selected_indexes = correct_fixation_df[correct_fixation_df.data == 1]["data"].index.tolist()
     correct_trials = np.asarray(stimulus_presented_df.data.values.tolist())[selected_indexes]
-    num_repetitions = np.asarray([len(correct_trials[correct_trials == stimulus]) for stimulus in np.unique(stimulus_presented_df.data.values.tolist())])
-    print(f'... {min(num_repetitions)} repeats, range is {np.unique(num_repetitions)}')
+    num_repetitions = np.asarray(
+        [
+            len(correct_trials[correct_trials == stimulus])
+            for stimulus in np.unique(stimulus_presented_df.data.values.tolist())
+        ]
+    )
+    print(f"... {min(num_repetitions)} repeats, range is {np.unique(num_repetitions)}")
 
     return output_filepath
+
 
 # if __name__ == '__main__':
 #     dump_events(sys.argv[1], sys.argv[2], sys.argv[3])
