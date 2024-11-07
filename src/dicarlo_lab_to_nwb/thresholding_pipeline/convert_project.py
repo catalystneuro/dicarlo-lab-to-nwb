@@ -60,6 +60,7 @@ def convert_project_sessions(project_config_path: str | Path):
     stimuli_are_video = False
     add_amplifier_data_to_nwb = False
     add_psth_in_pipeline_format_to_nwb = True
+    add_stimuli_media_to_nwb = False
 
     thresholindg_pipeline_kwargs = {
         "f_notch": 60.0,  # Frequency for the notch filter
@@ -141,6 +142,7 @@ def convert_project_sessions(project_config_path: str | Path):
                 verbose=verbose,
                 add_thresholding_events=add_thresholding_events,
                 add_psth=add_psth,
+                add_stimuli_media_to_nwb=add_stimuli_media_to_nwb,
                 stimuli_are_video=stimuli_are_video,
                 ground_truth_time_column=ground_truth_time_column,
                 add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
