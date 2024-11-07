@@ -1,0 +1,21 @@
+NWBFile:
+  keywords:
+    - Visual Stimuli
+    - Object Recognition
+    - Inferior temporal cortex (IT)
+    - Ventral visual pathway
+  related_publications:
+    - https://doi.org/great_publication or link to APA or MLA citation of the publication
+  session_description:
+    A rich text description of the experiment. Can also just be the abstract of the publication.
+  experiment_description: 'Task: Rapid serial visual presentation (RSVP).'
+  institution:  McGovern Institute for Brain Research at MIT
+  lab: DiCarlo
+  experimenter:
+    - DiCarlo, James
+  surgery: Utah Array Implant + Headpost
+Subject:
+  sex: M
+  species: Macaca mulatta
+  description: monkey
+  date_of_birth: 2014-06-22 00:00:00-04:00  # Example
