@@ -26,7 +26,14 @@ from dicarlo_lab_to_nwb.conversion.psth import (
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     StimuliImagesInterface,
     StimuliVideoInterface,
+    SessionStimuliImagesInterface,
 )
+
+from pynwb import NWBFile
+import numpy as np
+from dicarlo_lab_to_nwb.conversion.quality_control.latency import get_unit_latencies_from_reliabilities
+from dicarlo_lab_to_nwb.conversion.quality_control.reliability import get_NRR, get_p_values
+import pandas as pd
 
 
 def convert_session_to_nwb(
@@ -55,19 +62,10 @@ def convert_session_to_nwb(
 
     project_name = session_metadata["project_name"]
     subject = session_metadata["subject"]
-    recording_id = session_metadata.get(
-        "recording_id", ""
-    )  # recording_id contains stimulus name, date, and time of the recording
+    stimulus_name_camel_case = session_metadata["stimulus_name_camel_case"]
+    session_date = session_metadata["session_date"]
+    session_time = session_metadata["session_time"]
     pipeline_version = session_metadata.get("pipeline_version", "")
-
-    recording_id_match = re.search(r"_(\d{6})_(\d{6})$", recording_id)
-    if recording_id_match:
-        # date_str, time_str = recording_id_match.groups()
-        # dt = datetime.strptime(f'20{date_str} {time_str}', '%Y%m%d %H%M%S')
-        session_date = recording_id_match.group(1)
-        session_time = recording_id_match.group(2)
-    else:
-        assert False, f"Recording ID {recording_id} does not match the expected format"
 
     output_dir_path = Path(output_dir_path)
     if stub_test:
@@ -75,10 +73,11 @@ def convert_session_to_nwb(
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
     # session_id defines the name of the NWB file
-    # Break this down so recording_id is separated int its components, consideer using a camel case veersion
+    # Break this down so recording_id is separated int its components, consider using a camel case veersion
     # Of all the components like this example:
-    # project_name_camel_case = "".join([word.capitalize() for word in project_name.split("_")])
-    session_id = f"{project_name}_{subject}_{recording_id}_{pipeline_version}_thresholded"
+    project_name_camel_case = "".join([word.capitalize() for word in project_name.split("_")])
+    
+    session_id = f"{project_name}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
     if verbose:
@@ -128,7 +127,7 @@ def convert_session_to_nwb(
                 verbose=verbose,
             )
         else:
-            stimuli_interface = StimuliImagesInterface(
+            stimuli_interface = SessionStimuliImagesInterface(
                 file_path=mworks_processed_file_path,
                 folder_path=stimuli_folder,
                 image_set_name=project_name,
@@ -276,3 +275,66 @@ def convert_session_to_nwb(
         print("\n \n")
 
     return nwbfile_path
+
+
+def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Path):
+    psth = nwbfile.scratch["psth_pipeline_format"].data[:]
+    n_units, n_stimuli, n_reps, n_timebins = psth.shape
+    df = nwbfile.electrodes.to_dataframe()
+    channel_names = df["channel_name"].values
+
+    binned_spikes = nwbfile.processing['ecephys']['BinnedAlignedSpikesToStimulus']
+    psth_timebin_ms = binned_spikes.bin_width_in_milliseconds
+    psth_0 = binned_spikes.milliseconds_from_event_to_first_bin 
+    psth_1 = psth_0 + psth_timebin_ms * n_timebins - psth_timebin_ms
+    psth_timebins_s = np.linspace(psth_0, psth_1, n_timebins) / 1e3
+    latencies_s = get_unit_latencies_from_reliabilities(psth, psth_timebins_s)
+                
+    trial_df = nwbfile.intervals["trials"].to_dataframe()
+    stim_duration_s = trial_df["stimuli_presentation_time_ms"].unique()[0] / 1e3
+    stim_size_deg = trial_df["stimulus_size_degrees"].unique()[0]
+
+    # integrate spike counts over stimulus presentation duration + response latency
+    psth_stim_onset_s = 0
+    rates = np.full((n_units, n_stimuli, n_reps), np.nan)
+    mean_rates = np.full(n_units, np.nan)
+    for i in range(n_units):
+        intg_window_s_0 = psth_stim_onset_s + latencies_s[i]
+        intg_window_s_1 = intg_window_s_0 + stim_duration_s
+        intg_window = [intg_window_s_0, intg_window_s_1]
+        intg_window_size_s = np.diff(intg_window)[0]
+        intg_window_idx = [np.argmin(np.abs(psth_timebins_s - t)) for t in intg_window]
+
+        psth_unit = psth[i]
+        rates[i,:,:] = np.sum(psth_unit[..., intg_window_idx[0]:intg_window_idx[1]], axis=-1) / intg_window_size_s
+        # average rates across all dimensions except the first one
+        mean_rates[i] = np.nanmean(rates[i])
+
+    # p values
+    p_values = get_p_values(rates)
+    p_thresh = 0.05
+    valid_units = p_values < p_thresh
+    print(f"with p < {p_thresh}: N={np.sum(valid_units)} out of {len(p_values)} units")
+    print(f"mean latencies (valid units): {np.nanmean(latencies_s[valid_units])}")
+
+    # reliabilities
+    n_samples = n_reps // 2
+    rhos_samples = get_NRR(rates, n_reps=n_samples)
+    rhos_mean_values = np.nanmean(rhos_samples, axis=1)
+    print(f"half-split reliability (above 0.5) : {np.sum(rhos_mean_values>0.5)}")
+    srr_samples = get_NRR(rates, n_reps=2, correction=False)
+    srr_mean_values = np.nanmean(srr_samples, axis=-1)
+    print(f"SRR mean (valid units): {np.mean(srr_mean_values[valid_units])}")
+
+    # save results to a dataframe
+    df = pd.DataFrame({
+        "channel_name": channel_names,
+        "p_value": p_values,
+        "valid_unit": valid_units,
+        "mean_rate": mean_rates,
+        "response_latency_ms": latencies_s,
+        "half_split_reliability": rhos_mean_values,
+        "single_repeat_reliability": srr_mean_values,
+    })
+    csv_filepath = session_nwb_folder / f"{nwbfile.session_id}_QC.csv"
+    df.to_csv(csv_filepath, index=False)
