@@ -2,7 +2,6 @@ import yaml
 import re
 from datetime import datetime
 from pathlib import Path
-from dicarlo_lab_to_nwb.thresholding_pipeline.data_locator import locate_session_paths
 from dicarlo_lab_to_nwb.conversion.parse_mworks_RSVP import parse_mworks_file
 from dicarlo_lab_to_nwb.conversion.convert_session import convert_session_to_nwb, calculate_quality_metrics_from_nwb
 from pynwb import NWBHDF5IO
