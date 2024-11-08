@@ -311,8 +311,8 @@ def aggregate_nwbfiles(
     with NWBHDF5IO(file_paths[0], mode="r") as source_io:
         source_nwb = source_io.read()
         session_id_parts = source_nwb.session_id.split("_")
-        subject = session_id_parts[0]
-        project_name = session_id_parts[1]
+        project_name = session_id_parts[0]
+        subject = session_id_parts[1]
         pipeline_version = session_id_parts[-1]
         final_session_id = f"{subject}_{project_name}_{pipeline_version}"
 
