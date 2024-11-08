@@ -64,7 +64,6 @@ def calculate_event_psth_numpy_naive(
 
     return event_psth
 
-
 def calculate_event_psth(
     spike_times_list,
     event_times_seconds,
@@ -102,7 +101,6 @@ def calculate_event_psth(
         the PSTH for each unit and event.
     """
 
-    event_times_seconds = np.asarray(event_times_seconds)
     if number_of_events is None:
         number_of_events = len(event_times_seconds)
 
@@ -145,7 +143,7 @@ def calculate_event_psth(
             for event_index, event_time in enumerate(event_times_seconds):
                 event_bins = event_time + base_bins
                 event_psth[channel_index, event_index] = np.histogram(spike_times, bins=event_bins)[0]
-
+                
         return event_psth
 
     # Cache the compiled function
@@ -273,9 +271,9 @@ def build_psth_from_nwbfile(
     desc = "Calculating PSTH for stimuli"
     for stimuli_id in tqdm(stimuli_ids_sorted, desc=desc, unit=" stimuli processed", disable=not verbose):
         stimulus_presentation_times = stimuli_id_times[stimuli_id]
-        psth_per_stimuli = calculate_event_psth(
+        psth_per_stimuli = calculate_event_psth( #calculate_event_psth_numpy_naive( #
             spike_times_list=spike_times_list,
-            event_times_seconds=stimulus_presentation_times,
+            event_times_seconds=np.asarray(stimulus_presentation_times),
             bin_width_in_milliseconds=bin_width_in_milliseconds,
             number_of_bins=number_of_bins,
             milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
