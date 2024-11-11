@@ -1,14 +1,25 @@
-import yaml
 import re
 from datetime import datetime
 from pathlib import Path
-from dicarlo_lab_to_nwb.conversion.parse_mworks_RSVP import parse_mworks_file
-from dicarlo_lab_to_nwb.conversion.convert_session import convert_session_to_nwb, calculate_quality_metrics_from_nwb
-from pynwb import NWBHDF5IO
+
 import numpy as np
-from dicarlo_lab_to_nwb.conversion.quality_control.latency import get_unit_latencies_from_reliabilities
-from dicarlo_lab_to_nwb.conversion.quality_control.reliability import get_NRR, get_p_values
 import pandas as pd
+import yaml
+from pynwb import NWBHDF5IO
+
+from dicarlo_lab_to_nwb.conversion.convert_session import (
+    calculate_quality_metrics_from_nwb,
+    convert_session_to_nwb,
+)
+from dicarlo_lab_to_nwb.conversion.parse_mworks_RSVP import parse_mworks_file
+from dicarlo_lab_to_nwb.conversion.quality_control.latency import (
+    get_unit_latencies_from_reliabilities,
+)
+from dicarlo_lab_to_nwb.conversion.quality_control.reliability import (
+    get_NRR,
+    get_p_values,
+)
+
 
 # Recursive function to parse YAML content
 def parse_yaml_recursively(data):
@@ -18,11 +29,11 @@ def parse_yaml_recursively(data):
         for key, value in data.items():
             parsed_data[key] = parse_yaml_recursively(value)
         return parsed_data
-    
+
     # Check if the data is a list
     elif isinstance(data, list):
         return [parse_yaml_recursively(item) for item in data]
-    
+
     # If it's neither dict nor list, it's a base case (string, int, etc.)
     else:
         return data
@@ -39,7 +50,7 @@ def convert_project_sessions(project_config_path: str | Path):
         except yaml.YAMLError as exc:
             print(exc)
     parsed_result = parse_yaml_recursively(yaml_content)
-        
+
     # GLOBAL VARIABLES
     # TODO: put this in a config file
     subject = "Apollo"
@@ -68,12 +79,11 @@ def convert_project_sessions(project_config_path: str | Path):
     # This is the ground truth time column for the stimuli in the mworks csv file
     ground_truth_time_column = "samp_on_us"
 
-
     # project-level information
     project_info = parsed_result.get("project", {})
     project = project_info.get("name")
     project = "".join([word.capitalize() for word in project.split("_")])
-    
+
     subject = project_info.get("subject")
     nwb_output_folder = project_info.get("nwb_output_folder")
     project_version = project_info.get("project_version")
@@ -109,10 +119,10 @@ def convert_project_sessions(project_config_path: str | Path):
             print(f"  - MWorks Folder: {mworks_folder}")
             print(f"  - Data Folder: {data_folder}")
             print(f"  - Notes: {notes}\n")
-            
+
             # session info
             intan_recording_folder = data_folder.name
-            match = re.match(r'(.+?)_(\d{6})_(\d{6})$', intan_recording_folder)
+            match = re.match(r"(.+?)_(\d{6})_(\d{6})$", intan_recording_folder)
             if match:
                 stimulus_name = match.group(1)
                 session_date = match.group(2)
@@ -132,7 +142,9 @@ def convert_project_sessions(project_config_path: str | Path):
             }
 
             # Extract stimulus/behavioral events from MWorks files
-            mworks_processed_file_path = parse_mworks_file(mworks_folder, data_folder, mworks_folder) # save MWorks results in the same folder
+            mworks_processed_file_path = parse_mworks_file(
+                mworks_folder, data_folder, mworks_folder
+            )  # save MWorks results in the same folder
             print(f"  - MWorks processed file saved to: {mworks_processed_file_path}")
 
             session_nwb_filepath = convert_session_to_nwb(
@@ -156,13 +168,24 @@ def convert_project_sessions(project_config_path: str | Path):
 
             # add quality control if stimulus_name contains "normalizer"
             if "normalizer" in stimulus_name:
-                with NWBHDF5IO(session_nwb_filepath, mode='r') as io:
+                with NWBHDF5IO(session_nwb_filepath, mode="a") as io:
                     nwbfile = io.read()
-                    calculate_quality_metrics_from_nwb(nwbfile, session_nwb_filepath.parent)
+                    qm_df = calculate_quality_metrics_from_nwb(nwbfile, session_nwb_filepath.parent)
+                    from hdmf.common import DynamicTable
 
-                    
-if __name__ == '__main__':
+                    table = DynamicTable(description="quality_metrics", name="QualityMetricsSessionDateNormalizer")
+
+                    for column in qm_df.columns:
+                        table.add_column(name=column, description="")
+
+                    for row in qm_df.iterrows():
+                        table.add_row(row[1].to_dict())
+
+                    nwbfile.add_scratch(table)
+
+                # Calculate unit latencies
+
+
+if __name__ == "__main__":
     example_project_config = Path(__file__).parent / "project_config.yaml"
     convert_project_sessions(example_project_config)
-        
-    

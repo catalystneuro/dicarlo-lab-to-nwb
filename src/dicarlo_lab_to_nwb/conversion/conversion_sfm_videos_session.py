@@ -15,7 +15,7 @@ subject = "Apollo"  # Confirm this?
 pipeline_version = "DiLorean"
 
 output_dir_path = data_folder / "nwb_files"
-stub_test = False
+stub_test = True
 add_amplifier_data_to_nwb = False
 add_stimuli_media_to_nwb = False
 verbose = True
@@ -46,7 +46,7 @@ normalizers = [folder for folder in folders_in_session_date if "normalizers" in 
 
 folder_paths_to_convert = []
 folder_paths_to_convert += [session_data_folder_path]
-folder_paths_to_convert += normalizers
+# folder_paths_to_convert += normalizers
 
 
 for folder_with_data_path in folder_paths_to_convert:
@@ -64,10 +64,11 @@ for folder_with_data_path in folder_paths_to_convert:
     type_of_data = "session" if not is_normalizer else "normalizer"
     session_metadata = {
         "project_name": project_name,
-        "session_date": session_date,
+        "session_date": session_date[2:],
         "session_time": session_time,
         "subject": subject,
         "type_of_data": type_of_data,
+        "stimulus_name_camel_case": "sfmVideos",
         "pipeline_version": pipeline_version,
     }
 
