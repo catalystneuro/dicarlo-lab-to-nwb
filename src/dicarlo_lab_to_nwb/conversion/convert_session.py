@@ -6,9 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import numpy as np
+import pandas as pd
 from neuroconv import ConverterPipe
 from neuroconv.datainterfaces import IntanRecordingInterface
 from neuroconv.utils import dict_deep_update, load_dict_from_file
+from pynwb import NWBFile
 
 from dicarlo_lab_to_nwb.conversion.behaviorinterface import BehavioralTrialsInterface
 from dicarlo_lab_to_nwb.conversion.pipeline import (
@@ -23,17 +26,18 @@ from dicarlo_lab_to_nwb.conversion.psth import (
     write_binned_spikes_to_nwbfile,
     write_psth_pipeline_format_to_nwbfile,
 )
+from dicarlo_lab_to_nwb.conversion.quality_control.latency import (
+    get_unit_latencies_from_reliabilities,
+)
+from dicarlo_lab_to_nwb.conversion.quality_control.reliability import (
+    get_NRR,
+    get_p_values,
+)
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
+    SessionStimuliImagesInterface,
     StimuliImagesInterface,
     StimuliVideoInterface,
-    SessionStimuliImagesInterface,
 )
-
-from pynwb import NWBFile
-import numpy as np
-from dicarlo_lab_to_nwb.conversion.quality_control.latency import get_unit_latencies_from_reliabilities
-from dicarlo_lab_to_nwb.conversion.quality_control.reliability import get_NRR, get_p_values
-import pandas as pd
 
 
 def convert_session_to_nwb(
@@ -76,8 +80,8 @@ def convert_session_to_nwb(
     # Break this down so recording_id is separated int its components, consider using a camel case veersion
     # Of all the components like this example:
     project_name_camel_case = "".join([word.capitalize() for word in project_name.split("_")])
-    
-    session_id = f"{project_name}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
+
+    session_id = f"{project_name_camel_case}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
     if verbose:
@@ -106,8 +110,6 @@ def convert_session_to_nwb(
     # Behavioral Trials Interface
     behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
     conversion_options["Behavior"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
-
-    conversion_options["Stimuli"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
 
     # Build the converter pipe with the previously defined data interfaces
     data_interfaces_dict = {
@@ -283,13 +285,13 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
     df = nwbfile.electrodes.to_dataframe()
     channel_names = df["channel_name"].values
 
-    binned_spikes = nwbfile.processing['ecephys']['BinnedAlignedSpikesToStimulus']
+    binned_spikes = nwbfile.processing["ecephys"]["BinnedAlignedSpikesToStimulus"]
     psth_timebin_ms = binned_spikes.bin_width_in_milliseconds
-    psth_0 = binned_spikes.milliseconds_from_event_to_first_bin 
+    psth_0 = binned_spikes.milliseconds_from_event_to_first_bin
     psth_1 = psth_0 + psth_timebin_ms * n_timebins - psth_timebin_ms
     psth_timebins_s = np.linspace(psth_0, psth_1, n_timebins) / 1e3
     latencies_s = get_unit_latencies_from_reliabilities(psth, psth_timebins_s)
-                
+
     trial_df = nwbfile.intervals["trials"].to_dataframe()
     stim_duration_s = trial_df["stimuli_presentation_time_ms"].unique()[0] / 1e3
     stim_size_deg = trial_df["stimulus_size_degrees"].unique()[0]
@@ -306,7 +308,7 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
         intg_window_idx = [np.argmin(np.abs(psth_timebins_s - t)) for t in intg_window]
 
         psth_unit = psth[i]
-        rates[i,:,:] = np.sum(psth_unit[..., intg_window_idx[0]:intg_window_idx[1]], axis=-1) / intg_window_size_s
+        rates[i, :, :] = np.sum(psth_unit[..., intg_window_idx[0] : intg_window_idx[1]], axis=-1) / intg_window_size_s
         # average rates across all dimensions except the first one
         mean_rates[i] = np.nanmean(rates[i])
 
@@ -327,14 +329,16 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
     print(f"SRR mean (valid units): {np.mean(srr_mean_values[valid_units])}")
 
     # save results to a dataframe
-    df = pd.DataFrame({
-        "channel_name": channel_names,
-        "p_value": p_values,
-        "valid_unit": valid_units,
-        "mean_rate": mean_rates,
-        "response_latency_ms": latencies_s,
-        "half_split_reliability": rhos_mean_values,
-        "single_repeat_reliability": srr_mean_values,
-    })
+    df = pd.DataFrame(
+        {
+            "channel_name": channel_names,
+            "p_value": p_values,
+            "valid_unit": valid_units,
+            "mean_rate": mean_rates,
+            "response_latency_ms": latencies_s,
+            "half_split_reliability": rhos_mean_values,
+            "single_repeat_reliability": srr_mean_values,
+        }
+    )
     csv_filepath = session_nwb_folder / f"{nwbfile.session_id}_QC.csv"
     df.to_csv(csv_filepath, index=False)
