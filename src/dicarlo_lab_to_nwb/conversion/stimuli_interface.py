@@ -89,9 +89,8 @@ class StimuliImagesInterface(BaseDataInterface):
 
     keywords = [""]
 
-    def __init__(self, file_path: str | Path, folder_path: str | Path, image_set_name: str, verbose: bool = False):
+    def __init__(self, folder_path: str | Path, image_set_name: str, verbose: bool = False):
         # This should load the data lazily and prepare variables you need
-        self.file_path = Path(file_path)
         self.image_set_name = image_set_name
 
         self.stimuli_folder = Path(folder_path)
@@ -110,57 +109,16 @@ class StimuliImagesInterface(BaseDataInterface):
         nwbfile: NWBFile,
         metadata: dict,
         stub_test: bool = False,
-        ground_truth_time_column: str = "samp_on_us",
     ):
-        dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
-        mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
 
+        image_list = list(self.stimuli_folder.iterdir())
         if stub_test:
-            mwkorks_df = mwkorks_df.iloc[:10]
-
-        columns = mwkorks_df.columns
-        assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
-        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column] / 1e6
-        stimulus_ids = mwkorks_df["stimulus_presented"]
-        stimulus_filenames = mwkorks_df["stimulus_filename"].to_list()
-        stimulus_hashes = mwkorks_df["image_hash"].to_list()
-
-        # stimulus size and durations are constant for all images
-        stimulus_on_s = np.unique(mwkorks_df["stim_on_time_ms"]) / 1e3
-        stimulus_off_s = np.unique(mwkorks_df["stim_off_time_ms"]) / 1e3
-        stimulus_size_deg = np.unique(mwkorks_df["stimulus_size_degrees"])
-        # Generate unique lists from the above example while preserving the order of the unique values from the first list (stimulus_indices)
-        seen = set() # Initialize an empty set to track seen values from list1
-
-        # Initialize empty lists to store the unique values
-        uniq_stim_indices = []
-        uniq_stim_filenames = []
-        uniq_stim_hashes = []
-
-        # Iterate through the lists and preserve unique values based on list1
-        for l1, l2, l3 in zip(stimulus_ids, stimulus_filenames, stimulus_hashes):
-            if l1 not in seen:
-                uniq_stim_indices.append(l1)
-                uniq_stim_filenames.append(l2)
-                uniq_stim_hashes.append(l3)
-                seen.add(l1)
-
-        # Sort the paired lists based on the first list (stimulus_ids)
-        paired_uniq_lists = list(zip(uniq_stim_indices, uniq_stim_filenames, uniq_stim_hashes))
-        paired_uniq_lists.sort()
-        uniq_stim_indices, uniq_stim_filenames, uniq_stim_hashes = zip(*paired_uniq_lists)
-        assert len(uniq_stim_indices) == len(uniq_stim_filenames), "Stimulus indices and filenames do not match"
-
-        image_list = []
+            image_list = image_list[:10]
         image_mode_to_nwb_class = {"LA": GrayscaleImage, "L": GrayscaleImage, "RGB": RGBImage, "RGBA": RGBAImage}
 
-        for idx, stim_filename in enumerate(tqdm(
-            uniq_stim_filenames, desc="Processing images", unit=" images", disable=not self.verbose
-        )):
-            image_filename = stim_filename
-            image_hash = uniq_stim_hashes[idx]
-            image_file_path = self.stimuli_folder / f"{image_filename}"
-            assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
+        for image_file_path in tqdm(image_list, desc="Processing images", unit=" images", disable=not self.verbose):
+
+            image_filename = image_file_path.name
             iter_data = SingleImageIterator(filename=image_file_path)
             image_class = image_mode_to_nwb_class[iter_data.image_mode]
 
@@ -208,7 +166,7 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         stimulus_size_deg = np.unique(mwkorks_df["stimulus_size_degrees"])
 
         # Generate unique lists from the above example while preserving the order of the unique values from the first list (stimulus_indices)
-        seen = set() # Initialize an empty set to track seen values from list1
+        seen = set()  # Initialize an empty set to track seen values from list1
 
         # Initialize empty lists to store the unique values
         uniq_stim_indices = []
@@ -232,9 +190,9 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         image_list = []
         image_mode_to_nwb_class = {"L": GrayscaleImage, "RGB": RGBImage, "RGBA": RGBAImage}
 
-        for idx, stim_filename in enumerate(tqdm(
-            uniq_stim_filenames, desc="Processing images", unit=" images", disable=not self.verbose
-        )):
+        for idx, stim_filename in enumerate(
+            tqdm(uniq_stim_filenames, desc="Processing images", unit=" images", disable=not self.verbose)
+        ):
             image_filename = stim_filename
             image_hash = uniq_stim_hashes[idx]
             image_file_path = self.stimuli_folder / f"{image_filename}"
@@ -246,7 +204,7 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
                 image_array = image_array[..., 0]
             # image_array = np.rot90(image_array, k=3)
             image_kwargs = dict(name=image_filename, data=image_array, description=image_hash)
-            
+
             if image_array.ndim == 2:
                 image = GrayscaleImage(**image_kwargs)
             elif image_array.ndim == 3:
@@ -288,6 +246,56 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
 
 
 class StimuliVideoInterface(BaseDataInterface):
+
+    def __init__(
+        self,
+        folder_path: str | Path,
+        image_set_name: str,
+        video_copy_path: str | Path = None,
+        verbose: bool = False,
+    ):
+        # This should load the data lazily and prepare variables you need
+        self.stimuli_folder = Path(folder_path)
+        self.video_copy_path = Path(video_copy_path) if video_copy_path is not None else None
+        if self.video_copy_path:
+            self.video_copy_path.mkdir(parents=True, exist_ok=True)
+
+        assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
+        self.image_set_name = image_set_name
+
+        self.verbose = verbose
+
+    def add_to_nwbfile(
+        self,
+        nwbfile: NWBFile,
+        metadata: dict | None = None,
+        stub_test: bool = False,
+        ground_truth_time_column: str = "samp_on_us",
+    ):
+
+        video_file_paths = list(self.stimuli_folder.iterdir())
+        for video_file_path in tqdm(
+            video_file_paths, desc="Processing videos", unit="videos", disable=not self.verbose
+        ):
+
+            image_series = ImageSeries(
+                name="stimuli",
+                description=f"{self.image_set_name}",
+                unit="n.a.",
+                external_file=[video_file_path],
+                rate=1.0,  # Fake sampling rate
+            )
+
+            nwbfile.add_stimulus(image_series)
+
+        if self.video_copy_path:
+            # Copy all the videos in file_path_list to the video_copy_path
+            for file_path in video_file_paths:
+                video_output_file_path = self.video_copy_path / file_path.name
+                shutil.copy(file_path, video_output_file_path)
+
+
+class SessionStimuliVideoInterface(BaseDataInterface):
 
     def __init__(
         self,

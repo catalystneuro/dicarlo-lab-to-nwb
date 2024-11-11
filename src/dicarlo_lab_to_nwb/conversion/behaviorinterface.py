@@ -47,7 +47,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
         mwkorks_df["inter_stimuli_interval_ms"] = mwkorks_df["stim_off_time_ms"]
         mwkorks_df["stop_time"] = mwkorks_df["start_time"] + mwkorks_df["stimuli_presentation_time_ms"] / 1e3
 
-        mwkorks_df["stimuli_block_index"] = (
+        mwkorks_df["trial_index"] = (
             mwkorks_df["stimulus_order_in_trial"]
             .diff()  # Differences (5 - 1)
             .lt(0)  # Gets the point where it goes back to 1
@@ -59,10 +59,14 @@ class BehavioralTrialsInterface(BaseDataInterface):
             "inter_stimuli_interval_ms": "Inter stimulus interval in milliseconds",
             "stimulus_presented": "The stimulus ID presented",
             "fixation_correct": "Whether the fixation was correct during this stimulus presentation",
-            "stimuli_block_index": "The index of the block of stimuli presented",
+            "trial_index": "The index of the block of stimuli presented",
         }
 
         # Add information of the following columns if they are present in the dataframe
+
+        if "stimulus_order_in_trial":
+            descriptions["stimulus_order_in_trial"] = "The order of the stimulus in the trial"
+
         if "stimulus_size_degrees" in mwkorks_df.columns:
             descriptions["stimulus_size_degrees"] = "The size of the stimulus in degrees"
 
@@ -71,6 +75,15 @@ class BehavioralTrialsInterface(BaseDataInterface):
 
         if "fixation_point_size_degrees" in mwkorks_df.columns:
             descriptions["fixation_point_size_degrees"] = "The size of the fixation point in degrees"
+
+        if "image_hash" in mwkorks_df.columns:
+            descriptions["image_hash"] = "The hash of the image presented"
+
+        if "video_hash" in mwkorks_df.columns:
+            descriptions["video_hash"] = "The hash of the video presented"
+
+        if "stimulus_filename":
+            descriptions["stimulus_filename"] = "The name of the stimulus file"
 
         for column_name, description in descriptions.items():
             nwbfile.add_trial_column(name=column_name, description=description)
