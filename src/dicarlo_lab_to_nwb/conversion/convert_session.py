@@ -35,8 +35,7 @@ from dicarlo_lab_to_nwb.conversion.quality_control.reliability import (
 )
 from dicarlo_lab_to_nwb.conversion.stimuli_interface import (
     SessionStimuliImagesInterface,
-    StimuliImagesInterface,
-    StimuliVideoInterface,
+    SessionStimuliVideoInterface,
 )
 
 
@@ -120,7 +119,7 @@ def convert_session_to_nwb(
     # Add Stimuli Interface
     if add_stimuli_media_to_nwb:
         if stimuli_are_video:
-            stimuli_interface = StimuliVideoInterface(
+            stimuli_interface = SessionStimuliVideoInterface(
                 file_path=mworks_processed_file_path,
                 folder_path=stimuli_folder,
                 image_set_name=project_name,
