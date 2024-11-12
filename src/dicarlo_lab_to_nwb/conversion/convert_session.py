@@ -278,7 +278,7 @@ def convert_session_to_nwb(
     return nwbfile_path
 
 
-def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Path):
+def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Path)->pd.DataFrame:
     psth = nwbfile.scratch["psth_pipeline_format"].data[:]
     n_units, n_stimuli, n_reps, n_timebins = psth.shape
     df = nwbfile.electrodes.to_dataframe()
@@ -341,3 +341,4 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
     )
     csv_filepath = session_nwb_folder / f"{nwbfile.session_id}_QC.csv"
     df.to_csv(csv_filepath, index=False)
+    return df
