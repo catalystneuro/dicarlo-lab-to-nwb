@@ -7,6 +7,7 @@ import pandas as pd
 import yaml
 from pynwb import NWBHDF5IO
 
+from dicarlo_lab_to_nwb.conversion.aggregation import aggregate_nwbfiles
 from dicarlo_lab_to_nwb.conversion.convert_session import (
     calculate_quality_metrics_from_nwb,
     convert_session_to_nwb,
@@ -19,7 +20,6 @@ from dicarlo_lab_to_nwb.conversion.quality_control.reliability import (
     get_NRR,
     get_p_values,
 )
-from dicarlo_lab_to_nwb.conversion.aggregation import aggregate_nwbfiles
 
 
 # Recursive function to parse YAML content
@@ -41,10 +41,10 @@ def parse_yaml_recursively(data):
 
 
 def convert_project_sessions(
-        project_config_path: str | Path,
-        valid_unit_metric: str = "p_value",
-        valid_unit_threshold: float = 0.05,
-    ):
+    project_config_path: str | Path,
+    valid_unit_metric: str = "p_value",
+    valid_unit_threshold: float = 0.05,
+):
     project_config_path = Path(project_config_path)
     # assert if project_config_path is not a .yaml file
     assert project_config_path.exists(), f"File {project_config_path} does not exist"
@@ -68,7 +68,7 @@ def convert_project_sessions(
     stimuli_are_video = False
     add_amplifier_data_to_nwb = False
     add_psth_in_pipeline_format_to_nwb = True
-    
+
     thresholding_pipeline_kwargs = {
         "f_notch": 60.0,  # Frequency for the notch filter
         "bandwidth": 10.0,  # Bandwidth for the notch filter
@@ -138,7 +138,7 @@ def convert_project_sessions(
                 stimulus_name = match.group(1)
                 session_date = match.group(2)
                 session_time = match.group(3)
-                stimulus_name_camel_case = "".join([word.capitalize() for word in stimulus_name.split("_")])
+                data_collection = "normalizer" if "normalizer" in stimulus_name else "session"
 
             else:
                 assert False, f"intan_recording_folder name {intan_recording_folder} does not match the pattern"
@@ -146,10 +146,11 @@ def convert_project_sessions(
             session_metadata = {
                 "project_name": project,
                 "subject": subject,
-                "stimulus_name_camel_case": stimulus_name_camel_case,
+                "stimulus_name": stimulus_name,
                 "session_date": session_date,
                 "session_time": session_time,
                 "pipeline_version": pipeline_version,
+                "data_collection": data_collection,
             }
 
             # Extract stimulus/behavioral events from MWorks files
@@ -171,12 +172,13 @@ def convert_project_sessions(
                 add_thresholding_events=add_thresholding_events,
                 add_psth=add_psth,
                 stimuli_are_video=stimuli_are_video,
-                add_stimuli_media_to_nwb=True,
+                add_stimuli_media_to_nwb=False,
                 ground_truth_time_column=ground_truth_time_column,
                 add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
                 add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
             )
-
+            session_nwb_filepaths.append(session_nwb_filepath)
+            
             # add quality control if stimulus_name contains "normalizer"
             if "normalizer" in stimulus_name:
                 with NWBHDF5IO(session_nwb_filepath, mode="a") as io:
@@ -196,8 +198,7 @@ def convert_project_sessions(
                     qc_dataframes.append(qm_df)
 
     stacked_metrics = pd.concat(
-        {f"normalizer_{i}": df[valid_unit_metric] for i, df in enumerate(qc_dataframes)}, 
-        axis=1
+        {f"normalizer_{i}": df[valid_unit_metric] for i, df in enumerate(qc_dataframes)}, axis=1
     )
     if stub_test:
         valid_units = np.full(288, False)
@@ -205,9 +206,9 @@ def convert_project_sessions(
     else:
         boolean_stacked = stacked_metrics < valid_unit_threshold
         valid_units = boolean_stacked.all(axis=1)
-    
+
     aggregate_nwbfiles(session_nwb_filepaths, nwb_output_folder, pipeline_version, valid_units)
-            
+
 
 if __name__ == "__main__":
     example_project_config = Path(__file__).parent / "project_config.yaml"

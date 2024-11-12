@@ -1,0 +1,44 @@
+project:
+  name: SFM_foveal_videos
+  subject: Apollo
+  # data_root_folder: /Users/yoon/raw_data/ # this is the root folder where all the raw data resides for the pipeline
+  nwb_output_folder: /Users/yoon/Downloads/nwb_files
+  project_version: 1.0
+  pipeline_version: EVPP_1.0 # Extracellular Voltage Preprocessing Pipeline version 
+  code_version: 3.1
+  mworks_version: 0.13
+  experiments: # list day(s) of experiment(s)
+    - date: 20240715
+      sessions: # ... and individual session(s) per day in chronological order
+        - stimulus_name: normalizers.V3
+          stimulus_folder: /My Drive/data/DiCarlo-CN-data-share/StimulusSets/RSVP-normalizers-v3/images/ # NormalizerV3_1.png - 56.png
+          mworks_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240715/normalizers_240715_142806/
+          data_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240715/normalizers_240715_142806/
+          notes: none # in case there were any noteworthy events that happened during the experiment
+        - stimulus_name: SFM_foveal_videos_2
+          stimulus_folder: /My Drive/data/DiCarlo-CN-data-share/StimulusSets/SFM_foveal_videos_2/stimuli/ # might have to unzip SFM_videos.zip
+          mworks_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240715/SFM_foveal_videos_2_240715_144848/
+          data_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240715/SFM_foveal_videos_2_240715_144848/
+          notes: n/a
+        - stimulus_name: normalizers.V3
+          stimulus_folder: /My Drive/data/DiCarlo-CN-data-share/StimulusSets/RSVP-normalizers-v3/images/ 
+          mworks_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240715/normalizers_2_240715_171913/
+          data_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240715/normalizers_2_240715_171913/
+          notes: n/a
+    - date: 20240716
+      sessions: # ... and individual session(s) per day in chronological order
+        - stimulus_name: normalizers.V3
+          stimulus_folder: /My Drive/data/DiCarlo-CN-data-share/StimulusSets/RSVP-normalizers-v3/images/ # NormalizerV3_1.png - 56.png
+          mworks_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240716/normalizers_240716_140927/
+          data_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240716/normalizers_240716_140927/
+          notes: none # in case there were any noteworthy events that happened during the experiment
+        - stimulus_name: SFM_foveal_videos_2
+          stimulus_folder: /My Drive/data/DiCarlo-CN-data-share/StimulusSets/SFM_foveal_videos_2/stimuli/ # might have to unzip SFM_videos.zip
+          mworks_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240716/SFM_foveal_videos_2_240716_142554/
+          data_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240716/SFM_foveal_videos_2_240716_142554/
+          notes: n/a
+        - stimulus_name: normalizers.V3
+          stimulus_folder: /My Drive/data/DiCarlo-CN-data-share/StimulusSets/RSVP-normalizers-v3/images/ 
+          mworks_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240716/normalizers_2_240716_171543/
+          data_folder: /My Drive/data/DiCarlo-CN-data-share/SFM_foveal_videos_2/20240716/normalizers_2_240716_171543/
+          notes: n/a

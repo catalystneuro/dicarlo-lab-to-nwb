@@ -46,7 +46,7 @@ normalizers = [folder for folder in folders_in_session_date if "normalizers" in 
 
 folder_paths_to_convert = []
 folder_paths_to_convert += [session_data_folder_path]
-# folder_paths_to_convert += normalizers
+folder_paths_to_convert += normalizers
 
 
 for folder_with_data_path in folder_paths_to_convert:
@@ -61,15 +61,16 @@ for folder_with_data_path in folder_paths_to_convert:
     session_time = folder_with_data_path.name.split("_")[-1]
 
     is_normalizer = "normalizer" in folder_with_data_path.name
-    type_of_data = "session" if not is_normalizer else "normalizer"
+    data_collection = "normalizer" if is_normalizer else "session"
+    stimulus_name = "normalizers.V3" if is_normalizer else "SFM_foveal_videos_2"
     session_metadata = {
         "project_name": project_name,
         "session_date": session_date[2:],
         "session_time": session_time,
         "subject": subject,
-        "type_of_data": type_of_data,
-        "stimulus_name_camel_case": "sfmVideos",
+        "stimulus_name": stimulus_name,
         "pipeline_version": pipeline_version,
+        "data_collection": data_collection,
     }
 
     convert_session_to_nwb(
