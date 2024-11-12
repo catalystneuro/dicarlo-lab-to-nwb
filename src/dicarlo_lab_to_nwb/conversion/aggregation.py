@@ -234,9 +234,7 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
         subject = session_id_parts[0]
         project_name = session_id_parts[1]
 
-        print(f"{session_id=}")
         is_normalizer = "normalizer" in session_id.lower()
-        print(is_normalizer)
         # Open destination file
         with NWBHDF5IO(destination_path, mode="a") as dest_io:
             dest_nwb = dest_io.read()
