@@ -4,7 +4,8 @@ project:
   # data_root_folder: /Users/yoon/raw_data/ # this is the root folder where all the raw data resides for the pipeline
   nwb_output_folder: /Users/yoon/Downloads/nwb_files
   project_version: 1.0
-  pipeline_version: 3.1
+  pipeline_version: EVPP_1.0 # Extracellular Voltage Preprocessing Pipeline version 
+  code_version: 3.1
   mworks_version: 0.13
   experiments: # list day(s) of experiment(s)
     - date: 20240924
@@ -14,6 +15,11 @@ project:
           mworks_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/normalizers_240924_123021
           data_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/normalizers_240924_123021
           notes: none # in case there were any noteworthy events that happened during the experiment
+        - stimulus_name: test
+          stimulus_folder: /Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/stimuli/RSVP-normalizers-v3/images
+          mworks_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/test_240924_131313
+          data_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/test_240924_131313
+          notes: n/a
         - stimulus_name: normalizers.V3
           stimulus_folder: /Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/stimuli/RSVP-normalizers-v3/images
           mworks_folder: /Users/yoon/raw_data/Apollo/MonkeyValence/20240924/normalizers_240924_151135

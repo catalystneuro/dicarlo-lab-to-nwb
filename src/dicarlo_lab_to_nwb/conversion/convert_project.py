@@ -177,7 +177,8 @@ def convert_project_sessions(
                 add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
                 add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
             )
-
+            session_nwb_filepaths.append(session_nwb_filepath)
+            
             # add quality control if stimulus_name contains "normalizer"
             if "normalizer" in stimulus_name:
                 with NWBHDF5IO(session_nwb_filepath, mode="a") as io:
