@@ -219,6 +219,7 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
 
         # Extract metadata
         session_id = source_nwb.session_id
+        data_collection = source_nwb.data_collection
         if session_id is None:
             raise ValueError(f"Session ID not found in {source_path}")
 
@@ -234,7 +235,7 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
         subject = session_id_parts[0]
         project_name = session_id_parts[1]
 
-        is_normalizer = "normalizer" in session_id.lower()
+        is_normalizer = data_collection == "normalizer"
         # Open destination file
         with NWBHDF5IO(destination_path, mode="a") as dest_io:
             dest_nwb = dest_io.read()

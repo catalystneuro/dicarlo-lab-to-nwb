@@ -138,7 +138,7 @@ def convert_project_sessions(
                 stimulus_name = match.group(1)
                 session_date = match.group(2)
                 session_time = match.group(3)
-                stimulus_name_camel_case = "".join([word.capitalize() for word in stimulus_name.split("_")])
+                data_collection = "normalizer" if "normalizer" in stimulus_name else "session"
 
             else:
                 assert False, f"intan_recording_folder name {intan_recording_folder} does not match the pattern"
@@ -146,10 +146,11 @@ def convert_project_sessions(
             session_metadata = {
                 "project_name": project,
                 "subject": subject,
-                "stimulus_name_camel_case": stimulus_name_camel_case,
+                "stimulus_name": stimulus_name,
                 "session_date": session_date,
                 "session_time": session_time,
                 "pipeline_version": pipeline_version,
+                "data_collection": data_collection,
             }
 
             # Extract stimulus/behavioral events from MWorks files

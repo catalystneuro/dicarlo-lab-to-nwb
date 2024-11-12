@@ -65,10 +65,11 @@ def convert_session_to_nwb(
 
     project_name = session_metadata["project_name"]
     subject = session_metadata["subject"]
-    stimulus_name_camel_case = session_metadata["stimulus_name_camel_case"]
+    stimulus_name = session_metadata["stimulus_name"]
     session_date = session_metadata["session_date"]
     session_time = session_metadata["session_time"]
     pipeline_version = session_metadata.get("pipeline_version", "")
+    data_collection = session_metadata.get("data_collection", "")
 
     output_dir_path = Path(output_dir_path)
     if stub_test:
@@ -79,6 +80,7 @@ def convert_session_to_nwb(
     # Break this down so recording_id is separated int its components, consider using a camel case veersion
     # Of all the components like this example:
     project_name_camel_case = "".join([word.capitalize() for word in project_name.split("_")])
+    stimulus_name_camel_case = "".join([word.capitalize() for word in stimulus_name.split("_")])
 
     session_id = f"{project_name_camel_case}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
@@ -149,7 +151,7 @@ def convert_session_to_nwb(
     metadata = converter_pipe.get_metadata()
     metadata["NWBFile"]["session_start_time"] = session_start_time
     metadata["NWBFile"]["session_id"] = session_id
-
+    metadata["NWBFile"]["data_collection"] = data_collection
     # Update default metadata with the editable in the corresponding yaml file
     editable_metadata_path = Path(__file__).parent / "metadata.yaml"
     editable_metadata = load_dict_from_file(editable_metadata_path)
@@ -278,7 +280,7 @@ def convert_session_to_nwb(
     return nwbfile_path
 
 
-def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Path)->pd.DataFrame:
+def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Path) -> pd.DataFrame:
     psth = nwbfile.scratch["psth_pipeline_format"].data[:]
     n_units, n_stimuli, n_reps, n_timebins = psth.shape
     df = nwbfile.electrodes.to_dataframe()
