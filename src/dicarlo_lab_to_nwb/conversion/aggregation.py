@@ -102,7 +102,7 @@ def check_that_metadata_matches_across_files(
 def add_units_table(
     source_nwbfile: NWBFile,
     dest_nwbfile: NWBFile,
-    type_of_data: str,
+    is_normalizer: bool,
 ):
     """Add units table from source file to the new file.
 
@@ -112,8 +112,8 @@ def add_units_table(
         Source NWB file containing the units table to copy
     dest_nwbfile : NWBFile
         Target NWB file where the units table will be added
-    type_of_data : str
-        Type of data identifier for naming
+    is_normalizer : str
+        Whether the source file is a normalizer
 
     Returns
     -------
@@ -123,7 +123,8 @@ def add_units_table(
     units_table = source_nwbfile.units
     session_start_time = source_nwbfile.session_start_time.replace(tzinfo=None)
 
-    name_in_aggregated_table = f"{type_of_data}_{session_start_time}SpikeTimes"
+    type_of_data = "normalizers" if is_normalizer else "session_data"
+    name_in_aggregated_table = f"spike_times_{type_of_data}_{session_start_time}"
     new_units_table = pynwb.misc.Units(name=name_in_aggregated_table, description=units_table.description)
 
     # Add to processing module
@@ -149,7 +150,7 @@ def add_units_table(
 def add_trials_table(
     source_nwbfile: NWBFile,
     dest_nwbfile: NWBFile,
-    type_of_data: str,
+    is_normalizer: bool,
 ):
     """Add trials table from source file to the new file.
 
@@ -159,9 +160,8 @@ def add_trials_table(
         Source NWB file containing the trials table to copy
     dest_nwbfile : NWBFile
         Target NWB file where the trials table will be added
-    type_of_data : str
-        Type of data identifier for naming
-
+    is_normalizer: bool,
+        Whether the source file is a normalizer
     Returns
     -------
     pynwb.file.TimeIntervals
@@ -172,7 +172,9 @@ def add_trials_table(
         return None
 
     session_start_time = source_nwbfile.session_start_time.replace(tzinfo=None)
-    name_in_aggregated_table = f"{type_of_data}_{session_start_time}Trials"
+
+    type_of_data = "normalizers" if is_normalizer else "session_data"
+    name_in_aggregated_table = f"trials_table_{type_of_data}_{session_start_time}"
 
     # Create new trials table
     trials_df = trials_table.to_dataframe()
@@ -223,14 +225,12 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
         if session_id is None:
             raise ValueError(f"Session ID not found in {source_path}")
 
-        session_start_time = source_nwb.session_start_time
+        session_start_time = source_nwb.session_start_time.replace(tzinfo=None)
 
         # session_id = f"{project_name_camel_case}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
 
         session_id_parts = session_id.split("_")
-        stimulus_name_camel_case = session_id_parts[2]
 
-        type_of_data = session_id_parts[-2]
         pipeline_version = session_id_parts[-1]
         subject = session_id_parts[0]
         project_name = session_id_parts[1]
@@ -243,17 +243,17 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
             # Add PSTH data
             file_psth = source_nwb.scratch["psth_pipeline_format"]
             if is_normalizer:
-                name = f"psth_normalizers_{session_start_time.replace(tzinfo=None)}"
+                name = f"psth_normalizers_{session_start_time}"
             else:
-                name = f"psth_session_data_{session_start_time.replace(tzinfo=None)}"
+                name = f"psth_session_data_{session_start_time}"
 
             dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
 
             # Add units table
-            add_units_table(source_nwb, dest_nwb, type_of_data)
+            add_units_table(source_nwb, dest_nwb, is_normalizer)
 
             # Add trials table
-            add_trials_table(source_nwb, dest_nwb, type_of_data)
+            add_trials_table(source_nwb, dest_nwb, is_normalizer)
 
             dest_io.write(dest_nwb)
 
