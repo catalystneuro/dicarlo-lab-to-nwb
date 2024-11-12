@@ -89,7 +89,16 @@ class StimuliImagesInterface(BaseDataInterface):
 
     keywords = [""]
 
-    def __init__(self, folder_path: str | Path, image_set_name: str, verbose: bool = False):
+    def __init__(
+            self, 
+            file_path: str | Path, 
+            folder_path: str | Path, 
+            image_set_name: str, 
+            verbose: bool = False
+        ):
+        # parsed mworks events to make sure unique images matches the stimuli set in folder_path
+        self.file_path = Path(file_path)
+
         # This should load the data lazily and prepare variables you need
         self.image_set_name = image_set_name
 
@@ -148,22 +157,22 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         ground_truth_time_column: str = "samp_on_us",
     ):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
-        mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
+        mworks_df = pd.read_csv(self.file_path, dtype=dtype)
 
         if stub_test:
-            mwkorks_df = mwkorks_df.iloc[:10]
+            mworks_df = mworks_df.iloc[:10]
 
-        columns = mwkorks_df.columns
+        columns = mworks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
-        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column] / 1e6
-        stimulus_indices = mwkorks_df["stimulus_presented"].to_list()
-        stimulus_filenames = mwkorks_df["stimulus_filename"].to_list()
-        stimulus_hashes = mwkorks_df["image_hash"].to_list()
+        image_presentation_time_seconds = mworks_df[ground_truth_time_column] / 1e6
+        stimulus_indices = mworks_df["stimulus_presented"].to_list()
+        stimulus_filenames = mworks_df["stimulus_filename"].to_list()
+        stimulus_hashes = mworks_df["image_hash"].to_list()
 
         # stimulus size and durations are constant for all images
-        stimulus_on_s = np.unique(mwkorks_df["stim_on_time_ms"]) / 1e3
-        stimulus_off_s = np.unique(mwkorks_df["stim_off_time_ms"]) / 1e3
-        stimulus_size_deg = np.unique(mwkorks_df["stimulus_size_degrees"])
+        stimulus_on_s = np.unique(mworks_df["stim_on_time_ms"]) / 1e3
+        stimulus_off_s = np.unique(mworks_df["stim_off_time_ms"]) / 1e3
+        stimulus_size_deg = np.unique(mworks_df["stimulus_size_degrees"])
 
         # Generate unique lists from the above example while preserving the order of the unique values from the first list (stimulus_indices)
         seen = set()  # Initialize an empty set to track seen values from list1

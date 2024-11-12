@@ -19,6 +19,7 @@ from dicarlo_lab_to_nwb.conversion.quality_control.reliability import (
     get_NRR,
     get_p_values,
 )
+from dicarlo_lab_to_nwb.conversion.aggregation import aggregate_nwbfiles
 
 
 # Recursive function to parse YAML content
@@ -39,7 +40,11 @@ def parse_yaml_recursively(data):
         return data
 
 
-def convert_project_sessions(project_config_path: str | Path):
+def convert_project_sessions(
+        project_config_path: str | Path,
+        valid_unit_metric: str = "p_value",
+        valid_unit_threshold: float = 0.05,
+    ):
     project_config_path = Path(project_config_path)
     # assert if project_config_path is not a .yaml file
     assert project_config_path.exists(), f"File {project_config_path} does not exist"
@@ -63,7 +68,7 @@ def convert_project_sessions(project_config_path: str | Path):
     stimuli_are_video = False
     add_amplifier_data_to_nwb = False
     add_psth_in_pipeline_format_to_nwb = True
-
+    
     thresholding_pipeline_kwargs = {
         "f_notch": 60.0,  # Frequency for the notch filter
         "bandwidth": 10.0,  # Bandwidth for the notch filter
@@ -77,7 +82,7 @@ def convert_project_sessions(project_config_path: str | Path):
     # psth_kwargs = {"bins_span_milliseconds": 400, "num_bins": 10, "milliseconds_from_event_to_first_bin": -200.0}
 
     # This is the ground truth time column for the stimuli in the mworks csv file
-    ground_truth_time_column = "samp_on_us"
+    ground_truth_time_column = "photodiode_on_us"
 
     # project-level information
     project_info = parsed_result.get("project", {})
@@ -95,8 +100,14 @@ def convert_project_sessions(project_config_path: str | Path):
     nwb_output_folder.mkdir(parents=True, exist_ok=True)
 
     # experiment-level information
-    experiments = project_info.get("experiments", [])
-    for experiment in experiments:
+    daily_experiments = project_info.get("experiments", [])
+
+    # NWB filepaths for each individual session (recording)
+    session_nwb_filepaths = []
+
+    # quality-control dataframes across multiple sessions
+    qc_dataframes = []
+    for experiment in daily_experiments:
         experiment_date = experiment.get("date")
         # intermediate NWB files from each day will be saved in the nwb_output_folder
         experiment_output_folder = nwb_output_folder / f"{experiment_date}"
@@ -182,9 +193,21 @@ def convert_project_sessions(project_config_path: str | Path):
                         table.add_row(row[1].to_dict())
 
                     nwbfile.add_scratch(table)
+                    qc_dataframes.append(qm_df)
 
-                # Calculate unit latencies
-
+    stacked_metrics = pd.concat(
+        {f"normalizer_{i}": df[valid_unit_metric] for i, df in enumerate(qc_dataframes)}, 
+        axis=1
+    )
+    if stub_test:
+        valid_units = np.full(288, False)
+        valid_units[:23] = True
+    else:
+        boolean_stacked = stacked_metrics < valid_unit_threshold
+        valid_units = boolean_stacked.all(axis=1)
+    
+    aggregate_nwbfiles(session_nwb_filepaths, nwb_output_folder, pipeline_version, valid_units)
+            
 
 if __name__ == "__main__":
     example_project_config = Path(__file__).parent / "project_config.yaml"

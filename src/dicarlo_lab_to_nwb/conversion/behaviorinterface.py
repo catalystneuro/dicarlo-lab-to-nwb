@@ -37,18 +37,18 @@ class BehavioralTrialsInterface(BaseDataInterface):
         # We will make every image presentation a trial.
 
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
-        mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
+        mworks_df = pd.read_csv(self.file_path, dtype=dtype)
 
         if stub_test:
-            mwkorks_df = mwkorks_df.iloc[:100]
+            mworks_df = mworks_df.iloc[:100]
 
-        mwkorks_df["start_time"] = mwkorks_df[ground_truth_time_column] / 1e6
-        mwkorks_df["stimuli_presentation_time_ms"] = mwkorks_df["stim_on_time_ms"]
-        mwkorks_df["inter_stimuli_interval_ms"] = mwkorks_df["stim_off_time_ms"]
-        mwkorks_df["stop_time"] = mwkorks_df["start_time"] + mwkorks_df["stimuli_presentation_time_ms"] / 1e3
+        mworks_df["start_time"] = mworks_df[ground_truth_time_column] / 1e6
+        mworks_df["stimuli_presentation_time_ms"] = mworks_df["stim_on_time_ms"]
+        mworks_df["inter_stimuli_interval_ms"] = mworks_df["stim_off_time_ms"]
+        mworks_df["stop_time"] = mworks_df["start_time"] + mworks_df["stimuli_presentation_time_ms"] / 1e3
 
-        mwkorks_df["trial_index"] = (
-            mwkorks_df["stimulus_order_in_trial"]
+        mworks_df["trial_index"] = (
+            mworks_df["stimulus_order_in_trial"]
             .diff()  # Differences (5 - 1)
             .lt(0)  # Gets the point where it goes back to 1
             .cumsum()
@@ -59,7 +59,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
             "inter_stimuli_interval_ms": "Inter stimulus interval in milliseconds",
             "stimulus_presented": "The stimulus ID presented",
             "fixation_correct": "Whether the fixation was correct during this stimulus presentation",
-            "trial_index": "The index of the block of stimuli presented",
+            "trial_index": "The index of the trial of stimuli presented",
         }
 
         # Add information of the following columns if they are present in the dataframe
@@ -67,22 +67,22 @@ class BehavioralTrialsInterface(BaseDataInterface):
         if "stimulus_order_in_trial":
             descriptions["stimulus_order_in_trial"] = "The order of the stimulus in the trial"
 
-        if "stimulus_size_degrees" in mwkorks_df.columns:
+        if "stimulus_size_degrees" in mworks_df.columns:
             descriptions["stimulus_size_degrees"] = "The size of the stimulus in degrees"
 
-        if "fixation_window_size_degrees" in mwkorks_df.columns:
+        if "fixation_window_size_degrees" in mworks_df.columns:
             descriptions["fixation_window_size_degrees"] = "The size of the fixation window in degrees"
 
-        if "fixation_point_size_degrees" in mwkorks_df.columns:
+        if "fixation_point_size_degrees" in mworks_df.columns:
             descriptions["fixation_point_size_degrees"] = "The size of the fixation point in degrees"
 
-        if "image_hash" in mwkorks_df.columns:
+        if "image_hash" in mworks_df.columns:
             descriptions["image_hash"] = "The hash of the image presented"
 
-        if "video_hash" in mwkorks_df.columns:
+        if "video_hash" in mworks_df.columns:
             descriptions["video_hash"] = "The hash of the video presented"
 
-        if "stimulus_filename":
+        if "stimulus_filename" in mworks_df.columns:
             descriptions["stimulus_filename"] = "The name of the stimulus file"
 
         for column_name, description in descriptions.items():
@@ -91,5 +91,5 @@ class BehavioralTrialsInterface(BaseDataInterface):
         columns_to_write = ["start_time", "stop_time"] + list(descriptions.keys())
 
         # Extract a pandas dictionary with each row of the columns_to_write
-        for _, row in mwkorks_df[columns_to_write].iterrows():
+        for _, row in mworks_df[columns_to_write].iterrows():
             nwbfile.add_trial(**row.to_dict())
