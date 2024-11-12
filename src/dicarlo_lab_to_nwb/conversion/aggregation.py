@@ -6,6 +6,7 @@ import ndx_binned_spikes
 import numpy as np
 import pynwb
 from pynwb import NWBHDF5IO, NWBFile
+from tqdm.auto import tqdm
 
 from dicarlo_lab_to_nwb.conversion.probe import UtahArrayProbeInterface
 
@@ -145,6 +146,125 @@ def add_units_table(
         new_units_table.add_unit(**row_dict)
 
 
+def add_trials_table(
+    source_nwbfile: NWBFile,
+    dest_nwbfile: NWBFile,
+    type_of_data: str,
+):
+    """Add trials table from source file to the new file.
+
+    Parameters
+    ----------
+    source_nwbfile : NWBFile
+        Source NWB file containing the trials table to copy
+    dest_nwbfile : NWBFile
+        Target NWB file where the trials table will be added
+    type_of_data : str
+        Type of data identifier for naming
+
+    Returns
+    -------
+    pynwb.file.TimeIntervals
+        The newly created trials table
+    """
+    trials_table = source_nwbfile.trials
+    if trials_table is None:
+        return None
+
+    session_start_time = source_nwbfile.session_start_time.replace(tzinfo=None)
+    name_in_aggregated_table = f"{type_of_data}_{session_start_time}Trials"
+
+    # Create new trials table
+    trials_df = trials_table.to_dataframe()
+
+    # Create the trials table in destination file
+    new_trials_table = dest_nwbfile.create_time_intervals(
+        name=name_in_aggregated_table, description=trials_table.description or "Trial data from source file"
+    )
+
+    # Add all columns from source trials table
+    for column in trials_df.columns:
+        if column not in ["start_time", "stop_time", "tags"]:  # These are built-in columns
+            new_trials_table.add_column(
+                name=column,
+                description="",
+            )
+
+    # Add units
+    for row in trials_df.iterrows():
+        row_dict = row[1].to_dict()
+        new_trials_table.add_row(**row_dict)
+
+    return new_trials_table
+
+
+def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_path: Path) -> dict:
+    """Process a single source file and write its data to the destination.
+
+    Parameters
+    ----------
+    source_path : Path
+        Path to source NWB file
+    destination_path : Path
+        Path to destination NWB file
+
+    Returns
+    -------
+    dict
+        Metadata extracted from the source file
+    """
+    # Open source file
+    with NWBHDF5IO(source_path, mode="r") as source_io:
+        source_nwb = source_io.read()
+
+        # Extract metadata
+        session_id = source_nwb.session_id
+        if session_id is None:
+            raise ValueError(f"Session ID not found in {source_path}")
+
+        session_start_time = source_nwb.session_start_time
+
+        # session_id = f"{project_name_camel_case}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
+
+        session_id_parts = session_id.split("_")
+        stimulus_name_camel_case = session_id_parts[2]
+
+        type_of_data = session_id_parts[-2]
+        pipeline_version = session_id_parts[-1]
+        subject = session_id_parts[0]
+        project_name = session_id_parts[1]
+
+        print(f"{session_id=}")
+        is_normalizer = "normalizer" in session_id.lower()
+        print(is_normalizer)
+        # Open destination file
+        with NWBHDF5IO(destination_path, mode="a") as dest_io:
+            dest_nwb = dest_io.read()
+
+            # Add PSTH data
+            file_psth = source_nwb.scratch["psth_pipeline_format"]
+            if is_normalizer:
+                name = f"psth_normalizers_{session_start_time.replace(tzinfo=None)}"
+            else:
+                name = f"psth_session_data_{session_start_time.replace(tzinfo=None)}"
+
+            dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
+
+            # Add units table
+            add_units_table(source_nwb, dest_nwb, type_of_data)
+
+            # Add trials table
+            add_trials_table(source_nwb, dest_nwb, type_of_data)
+
+            dest_io.write(dest_nwb)
+
+    return {
+        "subject": subject,
+        "project_name": project_name,
+        "pipeline_version": pipeline_version,
+    }
+
+
 def create_destination_nwbfile(output_path: Path, session_id: str) -> None:
     """Create the initial NWB file with basic metadata.
 
@@ -181,71 +301,12 @@ def create_destination_nwbfile(output_path: Path, session_id: str) -> None:
         io.write(nwbfile)
 
 
-def process_single_file(source_path: Path, destination_path: Path) -> dict:
-    """Process a single source file and write its data to the destination.
-
-    Parameters
-    ----------
-    source_path : Path
-        Path to source NWB file
-    destination_path : Path
-        Path to destination NWB file
-
-    Returns
-    -------
-    dict
-        Metadata extracted from the source file
-    """
-    # Open source file
-    with NWBHDF5IO(source_path, mode="r") as source_io:
-        source_nwb = source_io.read()
-
-        # Extract metadata
-        session_id = source_nwb.session_id
-        if session_id is None:
-            raise ValueError(f"Session ID not found in {source_path}")
-
-        session_start_time = source_nwb.session_start_time
-        session_id_parts = session_id.split("_")
-        type_of_data = session_id_parts[-2]
-        pipeline_version = session_id_parts[-1]
-        subject = session_id_parts[0]
-        project_name = session_id_parts[1]
-
-        if type_of_data not in ["session", "normalizer"]:
-            error_msg = f"Unexpected type of data in session ID: {type_of_data}, from session ID: {session_id}"
-            raise ValueError(error_msg)
-
-        # Open destination file
-        with NWBHDF5IO(destination_path, mode="a") as dest_io:
-            dest_nwb = dest_io.read()
-
-            # Add PSTH data
-            file_psth = source_nwb.scratch["psth_pipeline_format"]
-            if type_of_data == "session":
-                name = f"psth_session_data_{session_start_time.replace(tzinfo=None)}"
-            elif type_of_data == "normalizer":
-                name = f"psth_normalizers_{session_start_time.replace(tzinfo=None)}"
-
-            dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
-
-            # Add units table
-            add_units_table(source_nwb, dest_nwb, type_of_data)
-
-            dest_io.write(dest_nwb)
-
-    return {
-        "subject": subject,
-        "project_name": project_name,
-        "pipeline_version": pipeline_version,
-    }
-
-
 def aggregate_nwbfiles(
     file_paths: List[Union[str, Path]],
     output_folder_path: Union[str, Path],
     pipeline_version: str = "DiLorean",
     is_unit_valid: Optional[np.ndarray] = None,
+    verbose: bool = True,
 ) -> Path:
     """
     Aggregate multiple NWB files into a single file.
@@ -256,6 +317,7 @@ def aggregate_nwbfiles(
     - Individual PSTHs from each input file
     - Concatenated PSTH combining all session data across stimuli presentation
     - Units tables (spike or thresholded data) from each input file
+    - Trial tables from each input file
 
     Parameters
     ----------
@@ -267,6 +329,10 @@ def aggregate_nwbfiles(
         {subject}_{project_name}_{pipeline_version}.nwb
     pipeline_version : str, optional
         Version identifier for the pipeline, by default "DiLorean"
+    is_unit_valid : numpy.ndarray, optional
+        Boolean array indicating which units to include in the concatenated PSTH
+    verbose : bool, optional
+        Whether to print progress messages, by default True
 
     Returns
     -------
@@ -284,6 +350,7 @@ def aggregate_nwbfiles(
     - Individual PSTHs from each input file
     - Concatenated PSTH combining all session data (axis=2)
     - Units tables from each input file
+    - Trial tables from each input file
     - Probe information
     - Session information
 
@@ -305,7 +372,8 @@ def aggregate_nwbfiles(
     # Lists to store metadata
     metadata_list = []
 
-    print(f"Found {len(file_paths)} NWB files to process")
+    if verbose:
+        print(f"Found {len(file_paths)} NWB files to process")
 
     # Get metadata from first file to set up destination file
     with NWBHDF5IO(file_paths[0], mode="r") as source_io:
@@ -326,11 +394,11 @@ def aggregate_nwbfiles(
     create_destination_nwbfile(aggregated_nwbfile_path, final_session_id)
 
     # Process each file
-    from tqdm.auto import tqdm
 
-    for file_path in tqdm(file_paths, desc="Processing files", unit="file"):
-        tqdm.write(f"Processing: {file_path.name}")
-        metadata = process_single_file(file_path, aggregated_nwbfile_path)
+    for file_path in tqdm(file_paths, desc="Processing files", unit="file", disable=not verbose):
+        if verbose:
+            tqdm.write(f"Processing: {file_path.name}")
+        metadata = propagate_session_data_to_aggregate_nwbfile(file_path, aggregated_nwbfile_path)
         metadata_list.append(metadata)
 
     # Extract metadata lists for validation
@@ -347,7 +415,8 @@ def aggregate_nwbfiles(
     )
 
     # Final pass: Read all session PSTHs and add concatenated data
-    tqdm.write("Concatenating session PSTHs...")
+    if verbose:
+        tqdm.write("Concatenating session PSTHs...")
     with NWBHDF5IO(aggregated_nwbfile_path, mode="a") as io:
         nwbfile = io.read()
 

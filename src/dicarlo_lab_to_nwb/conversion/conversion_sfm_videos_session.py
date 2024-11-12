@@ -10,7 +10,7 @@ stimulus_data_folder_path = data_folder / project_name
 assert stimulus_data_folder_path.exists(), f"{stimulus_data_folder_path} does not exist"
 
 session_date = "20240715"
-# session_date = "20240716"
+session_date = "20240716"
 subject = "Apollo"  # Confirm this?
 pipeline_version = "DiLorean"
 
@@ -46,7 +46,7 @@ normalizers = [folder for folder in folders_in_session_date if "normalizers" in 
 
 folder_paths_to_convert = []
 folder_paths_to_convert += [session_data_folder_path]
-# folder_paths_to_convert += normalizers
+folder_paths_to_convert += normalizers
 
 
 for folder_with_data_path in folder_paths_to_convert:
@@ -61,14 +61,14 @@ for folder_with_data_path in folder_paths_to_convert:
     session_time = folder_with_data_path.name.split("_")[-1]
 
     is_normalizer = "normalizer" in folder_with_data_path.name
-    type_of_data = "session" if not is_normalizer else "normalizer"
+    stimulus_name = "normalizers.V3" if not is_normalizer else "SFM_foveal_videos_2"
+    stimulus_name_camel_case = "".join([word.capitalize() for word in stimulus_name.split("_")])
     session_metadata = {
         "project_name": project_name,
         "session_date": session_date[2:],
         "session_time": session_time,
         "subject": subject,
-        "type_of_data": type_of_data,
-        "stimulus_name_camel_case": "sfmVideos",
+        "stimulus_name_camel_case": stimulus_name_camel_case,
         "pipeline_version": pipeline_version,
     }
 
