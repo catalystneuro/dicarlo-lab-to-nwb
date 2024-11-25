@@ -57,17 +57,18 @@ def convert_project_sessions(
     parsed_result = parse_yaml_recursively(yaml_content)
 
     # GLOBAL VARIABLES
-    # TODO: put this in a config file
-    subject = "Apollo"
-    pipeline_version = "DiLorean"
-
-    stub_test = False
+    stub_test = True
     verbose = True
     add_thresholding_events = True
     add_psth = True
     stimuli_are_video = False
     add_amplifier_data_to_nwb = False
     add_psth_in_pipeline_format_to_nwb = True
+    probe_info_path = Path(__file__).parent / "probe_info_dicarlo.csv"
+
+    progress_bar = verbose
+    # job_kwargs = dict(n_jobs=-1, progress_bar=progress_bar, chunk_duration=60.0)  # Fixed chunks to 60 seconds
+    job_kwargs = dict(n_jobs=-1, progress_bar=progress_bar, chunk_duration=10.0)  # Fixed chunks to 10 seconds
 
     thresholding_pipeline_kwargs = {
         "f_notch": 60.0,  # Frequency for the notch filter
@@ -75,11 +76,8 @@ def convert_project_sessions(
         "f_low": 300.0,  # Low cutoff frequency for the bandpass filter
         "f_high": 6000.0,  # High cutoff frequency for the bandpass filter
         "noise_threshold": 3,  # Threshold for detection in the thresholding algorithm
+        "job_kwargs": job_kwargs,
     }
-
-    # Ten bins starting 200 ms before the stimulus and spanning 400 ms
-    psth_kwargs = {"bins_span_milliseconds": 500, "num_bins": 50, "milliseconds_from_event_to_first_bin": -200.0}
-    # psth_kwargs = {"bins_span_milliseconds": 400, "num_bins": 10, "milliseconds_from_event_to_first_bin": -200.0}
 
     # This is the ground truth time column for the stimuli in the mworks csv file
     ground_truth_time_column = "photodiode_on_us"
@@ -123,6 +121,20 @@ def convert_project_sessions(
             data_folder = Path(session.get("data_folder"))
             intan_file_path = data_folder / "info.rhd"
             assert intan_file_path.exists(), f"{intan_file_path} does not exist"
+
+            # psth time dimensions
+            psth_start_s = session.get("psth_start_s")
+            psth_end_s = session.get("psth_end_s")
+            psth_bin_size_s = session.get("psth_bin_size_s")
+            psth_timebins_s = np.round(np.arange(psth_start_s, psth_end_s, psth_bin_size_s), 3)
+            # organize psth kwargs
+
+            psth_kwargs = {
+                "bins_span_milliseconds": psth_end_s - psth_start_s, 
+                "num_bins": len(psth_timebins_s), 
+                "milliseconds_from_event_to_first_bin": psth_start_s * 1000.0
+                }
+    
             notes = session.get("notes")
 
             print(f"  Session Stimulus Name: {stimulus_name}")
@@ -176,6 +188,7 @@ def convert_project_sessions(
                 ground_truth_time_column=ground_truth_time_column,
                 add_amplifier_data_to_nwb=add_amplifier_data_to_nwb,
                 add_psth_in_pipeline_format_to_nwb=add_psth_in_pipeline_format_to_nwb,
+                probe_info_path=probe_info_path,
             )
             session_nwb_filepaths.append(session_nwb_filepath)
             
@@ -211,5 +224,6 @@ def convert_project_sessions(
 
 
 if __name__ == "__main__":
-    example_project_config = Path(__file__).parent / "project_config.yaml"
+    example_project_config = Path(__file__).parent / "project_config_simulation.yaml"
+    # example_project_config = Path(__file__).parent / "project_config_2.yaml"
     convert_project_sessions(example_project_config)
