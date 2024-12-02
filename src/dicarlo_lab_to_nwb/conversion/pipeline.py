@@ -360,7 +360,6 @@ def thresholding_peak_detection(
 
     for channel_index, channel_id in enumerate(channel_ids):
         channel_spike_times = [times[channel_index] for times in values]
-        channel_ids
         spike_times_per_channel[channel_id] = np.concatenate(channel_spike_times)
 
     return spike_times_per_channel

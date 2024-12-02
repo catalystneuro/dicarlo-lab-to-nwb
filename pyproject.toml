@@ -16,16 +16,16 @@ classifiers = [
 
 
 dependencies = [
-  "neuroconv[video] == 0.6.4",
-  "spikeinterface == 0.101.1",
-  "probeinterface == 0.2.23",
-  "neo==0.13.2",
+  "neuroconv[video] == 0.6.5",
+  "spikeinterface == 0.101.2",
+  "probeinterface == 0.2.24",
+  "neo @ git+https://github.com/h-mayorquin/python-neo@fix_intan_one_file_per_channel",
   "pillow>=10.3.0",
-  "ndx-binned-spikes==0.2.0",
+  "ndx-binned-spikes==0.2.1",
   "matplotlib",
   "psutil",
-  "docker",
   "numba",
+  "natsort"
 ]
 
 [project.urls]
@@ -35,7 +35,8 @@ Repository = "https://github.com/catalystneuro/dicarlo-lab-to-nwb"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.black]
 line-length = 120

@@ -64,6 +64,7 @@ def calculate_event_psth_numpy_naive(
 
     return event_psth
 
+
 def calculate_event_psth(
     spike_times_list,
     event_times_seconds,
@@ -143,7 +144,7 @@ def calculate_event_psth(
             for event_index, event_time in enumerate(event_times_seconds):
                 event_bins = event_time + base_bins
                 event_psth[channel_index, event_index] = np.histogram(spike_times, bins=event_bins)[0]
-                
+
         return event_psth
 
     # Cache the compiled function
@@ -258,20 +259,20 @@ def build_psth_from_nwbfile(
     spike_times_list = [dict_of_spikes_times[id] for id in unit_ids_order]
 
     trials_dataframe = nwbfile.trials.to_dataframe()
-    stimuli_times = trials_dataframe["start_time"]  # In seconds
+    stimuli_times_seconds = trials_dataframe["start_time"]
     stimuli_presentation_id = trials_dataframe["stimulus_presented"]
     stimuli_ids = stimuli_presentation_id.unique()
 
     # We also sort the stimuli by their id
     stimuli_ids_sorted = sorted(stimuli_ids)
     id_to_df_indices = {id: stimuli_presentation_id == id for id in stimuli_ids_sorted}
-    stimuli_id_times = {id: stimuli_times[indices] for id, indices in id_to_df_indices.items()}
+    stimuli_id_times = {id: stimuli_times_seconds[indices] for id, indices in id_to_df_indices.items()}
 
     stimuli_id_psth = {}
     desc = "Calculating PSTH for stimuli"
     for stimuli_id in tqdm(stimuli_ids_sorted, desc=desc, unit=" stimuli processed", disable=not verbose):
         stimulus_presentation_times = stimuli_id_times[stimuli_id]
-        psth_per_stimuli = calculate_event_psth( #calculate_event_psth_numpy_naive( #
+        psth_per_stimuli = calculate_event_psth(
             spike_times_list=spike_times_list,
             event_times_seconds=np.asarray(stimulus_presentation_times),
             bin_width_in_milliseconds=bin_width_in_milliseconds,

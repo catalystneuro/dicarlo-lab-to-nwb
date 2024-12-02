@@ -135,3 +135,5 @@ dmypy.json
 
 src/dicarlo_lab_to_nwb/conversion/assets/utah_array_factsheet.pdf
 .DS_Store
+
+uv.lock
