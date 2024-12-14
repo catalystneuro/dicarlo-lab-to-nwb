@@ -19,7 +19,7 @@ dependencies = [
   "neuroconv[video] == 0.6.5",
   "spikeinterface == 0.101.2",
   "probeinterface == 0.2.24",
-  "neo @ git+https://github.com/h-mayorquin/python-neo@fix_intan_one_file_per_channel",
+  "neo @ git+https://github.com/NeuralEnsemble/python-neo@master",
   "pillow>=10.3.0",
   "ndx-binned-spikes==0.2.1",
   "matplotlib",
