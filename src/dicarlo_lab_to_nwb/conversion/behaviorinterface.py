@@ -59,7 +59,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
             stimulus_index_for_test_data = -1
             offuscate = lambda row: row["stim_id"] - offset if row["is_train"] else stimulus_index_for_test_data
             offuscate_map = {row["stim_id"]: offuscate(row) for _, row in train_test_split_df.iterrows()}
-            mworks_df["stimuli_index"] = mworks_df["stimulus_presented"].map(offuscate_map)
+            mworks_df["stimulus_presented"] = mworks_df["stimulus_presented"].map(offuscate_map)
 
         if stub_test:
             mworks_df = mworks_df.iloc[:100]
