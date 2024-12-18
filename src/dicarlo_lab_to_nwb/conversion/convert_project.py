@@ -57,7 +57,7 @@ def convert_project_sessions(
     parsed_result = parse_yaml_recursively(yaml_content)
 
     # GLOBAL VARIABLES
-    stub_test = True
+    stub_test = False
     verbose = True
     add_thresholding_events = True
     add_psth = True
@@ -130,7 +130,7 @@ def convert_project_sessions(
             # organize psth kwargs
 
             psth_kwargs = {
-                "bins_span_milliseconds": psth_end_s - psth_start_s, 
+                "bins_span_milliseconds": (psth_end_s - psth_start_s) * 1000.0, 
                 "num_bins": len(psth_timebins_s), 
                 "milliseconds_from_event_to_first_bin": psth_start_s * 1000.0
                 }
@@ -224,6 +224,20 @@ def convert_project_sessions(
 
 
 if __name__ == "__main__":
-    example_project_config = Path(__file__).parent / "project_config_simulation.yaml"
+    project_config_folder = Path("/Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/dicarlo-lab-to-nwb-testing")
+    project_config_path = project_config_folder / "project_config_simulation.yaml"
+    example_project_config = project_config_path
+
     # example_project_config = Path(__file__).parent / "project_config_2.yaml"
     convert_project_sessions(example_project_config)
+    
+    # import sys
+
+    # if len(sys.argv) < 2:
+    #     print("Usage: python convert_project.py <config.yaml file path>")
+    #     sys.exit(1)
+
+    # # experiment ID's
+    # project_config_path = sys.argv[1]
+    # convert_project_sessions(project_config_path)
+
