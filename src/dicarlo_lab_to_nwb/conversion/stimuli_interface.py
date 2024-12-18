@@ -1,5 +1,6 @@
 import shutil
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -90,20 +91,23 @@ class StimuliImagesInterface(BaseDataInterface):
     keywords = [""]
 
     def __init__(
-            self, 
-            file_path: str | Path, 
-            folder_path: str | Path, 
-            image_set_name: str, 
-            verbose: bool = False
-        ):
+        self,
+        file_path: str | Path,
+        folder_path: str | Path,
+        image_set_name: str,
+        verbose: bool = False,
+        train_test_split_data_file_path: Optional[str | Path] = None,
+    ):
         # parsed mworks events to make sure unique images matches the stimuli set in folder_path
         self.file_path = Path(file_path)
-
         # This should load the data lazily and prepare variables you need
         self.image_set_name = image_set_name
 
         self.stimuli_folder = Path(folder_path)
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
+        self.train_test_split_data_file_path = (
+            Path(train_test_split_data_file_path) if train_test_split_data_file_path else None
+        )
 
         self.verbose = verbose
 
@@ -131,7 +135,7 @@ class StimuliImagesInterface(BaseDataInterface):
             iter_data = SingleImageIterator(filename=image_file_path)
             image_class = image_mode_to_nwb_class[iter_data.image_mode]
 
-            image_kwargs = dict(name=image_filename, data=iter_data, description=f"hash: {image_hash}")
+            image_kwargs = dict(name=image_filename, data=iter_data, description=f"")
             image_object = image_class(**image_kwargs)
 
             image_list.append(image_object)
@@ -159,6 +163,21 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
         mworks_df = pd.read_csv(self.file_path, dtype=dtype)
 
+        if self.train_test_split_data_file_path is not None:
+            train_test_split_df = pd.read_csv(self.train_test_split_data_file_path)
+            # Create separate mappings for train status and filenames
+            stimulus_id_to_is_train = dict(zip(train_test_split_df["stim_id"] - 1, train_test_split_df["is_train"]))
+            mworks_df["is_train"] = mworks_df["stimulus_presented"].map(stimulus_id_to_is_train)
+
+            if "filename" in train_test_split_df.columns:
+                stimulus_id_to_filename = dict(zip(train_test_split_df["stim_id"] - 1, train_test_split_df["filename"]))
+                mworks_df["stimulus_filename"] = mworks_df["stimulus_presented"].map(stimulus_id_to_filename)
+            else:
+                mworks_df["stimulus_filename"] = [f"{stim_id}.png" for stim_id in mworks_df["stimulus_presented"]]
+
+            # Filter to training data only
+            mworks_df = mworks_df.query("is_train == True")
+
         if stub_test:
             mworks_df = mworks_df.iloc[:10]
 
@@ -166,44 +185,38 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
         image_presentation_time_seconds = mworks_df[ground_truth_time_column] / 1e6
         stimulus_indices = mworks_df["stimulus_presented"].to_list()
+
+        # If the mworks does not contain stimulus_filename add it with an heurisitc
+        if "stimulus_filenames" in mworks_df.columns:
+            stimulus_filenames = mworks_df["stimulus_filenames"].to_list()
+        else:
+            stimulus_filenames = [f"{stimulus_id}.png" for stimulus_id in stimulus_indices]
+
         stimulus_filenames = mworks_df["stimulus_filename"].to_list()
-        stimulus_hashes = mworks_df["image_hash"].to_list()
 
-        # stimulus size and durations are constant for all images
-        stimulus_on_s = np.unique(mworks_df["stim_on_time_ms"]) / 1e3
-        stimulus_off_s = np.unique(mworks_df["stim_off_time_ms"]) / 1e3
-        stimulus_size_deg = np.unique(mworks_df["stimulus_size_degrees"])
-
-        # Generate unique lists from the above example while preserving the order of the unique values from the first list (stimulus_indices)
-        seen = set()  # Initialize an empty set to track seen values from list1
-
-        # Initialize empty lists to store the unique values
+        # Generate unique lists while preserving order
+        seen = set()
         uniq_stim_indices = []
         uniq_stim_filenames = []
-        uniq_stim_hashes = []
 
-        # Iterate through the lists and preserve unique values based on list1
-        for l1, l2, l3 in zip(stimulus_indices, stimulus_filenames, stimulus_hashes):
-            if l1 not in seen:
-                uniq_stim_indices.append(l1)
-                uniq_stim_filenames.append(l2)
-                uniq_stim_hashes.append(l3)
-                seen.add(l1)
+        for stim_idx, stim_filename in zip(stimulus_indices, stimulus_filenames):
+            if stim_idx not in seen:
+                uniq_stim_indices.append(stim_idx)
+                uniq_stim_filenames.append(stim_filename)
+                seen.add(stim_idx)
 
-        # Sort the paired lists based on the first list (stimulus_indices)
-        paired_uniq_lists = list(zip(uniq_stim_indices, uniq_stim_filenames, uniq_stim_hashes))
-        paired_uniq_lists.sort()
-        uniq_stim_indices, uniq_stim_filenames, uniq_stim_hashes = zip(*paired_uniq_lists)
+        # Sort the paired lists based on stimulus indices
+        paired_uniq_lists = sorted(zip(uniq_stim_indices, uniq_stim_filenames))
+        uniq_stim_indices, uniq_stim_filenames = zip(*paired_uniq_lists)
         assert len(uniq_stim_indices) == len(uniq_stim_filenames), "Stimulus indices and filenames do not match"
 
         image_list = []
         image_mode_to_nwb_class = {"L": GrayscaleImage, "RGB": RGBImage, "RGBA": RGBAImage}
 
-        for idx, stim_filename in enumerate(
+        for index, stim_filename in enumerate(
             tqdm(uniq_stim_filenames, desc="Processing images", unit=" images", disable=not self.verbose)
         ):
             image_filename = stim_filename
-            image_hash = uniq_stim_hashes[idx]
             image_file_path = self.stimuli_folder / f"{image_filename}"
             assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
             image = Image.open(image_file_path)
@@ -211,8 +224,7 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
             # in case of 2 channels: grayscale + alpha
             if image_array.ndim == 3 and image_array.shape[2] < 3:
                 image_array = image_array[..., 0]
-            # image_array = np.rot90(image_array, k=3)
-            image_kwargs = dict(name=image_filename, data=image_array, description=image_hash)
+            image_kwargs = dict(name=image_filename, data=image_array, description="")
 
             if image_array.ndim == 2:
                 image = GrayscaleImage(**image_kwargs)
@@ -240,6 +252,7 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         indexed_images = nwbfile.stimulus["stimuli"]
 
         # Add the stimulus presentation index
+        # Note that every time has to be pointed to the exact index
         stimulus_id_to_index = {stimulus_id: index for index, stimulus_id in enumerate(uniq_stim_indices)}
         data = np.asarray([stimulus_id_to_index[stimulus_id] for stimulus_id in stimulus_indices], dtype=np.uint32)
         index_series = IndexSeries(
@@ -260,6 +273,7 @@ class StimuliVideoInterface(BaseDataInterface):
         self,
         folder_path: str | Path,
         image_set_name: str,
+        train_test_split_data_file_path: Optional[str | Path] = None,
         video_copy_path: str | Path = None,
         verbose: bool = False,
     ):
@@ -271,6 +285,10 @@ class StimuliVideoInterface(BaseDataInterface):
 
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
         self.image_set_name = image_set_name
+
+        self.train_test_split_data_file_path = (
+            Path(train_test_split_data_file_path) if train_test_split_data_file_path else None
+        )
 
         self.verbose = verbose
 
@@ -333,20 +351,46 @@ class SessionStimuliVideoInterface(BaseDataInterface):
         stub_test: bool = False,
         ground_truth_time_column: str = "samp_on_us",
     ):
+
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
-        mwkorks_df = pd.read_csv(self.file_path, dtype=dtype)
+        mworks_df = pd.read_csv(self.file_path, dtype=dtype)
+
+        if self.train_test_split_data_file_path is not None:
+            train_test_split_df = pd.read_csv(self.train_test_split_data_file_path)
+            # Create separate mappings for train status and filenames
+            stimulus_id_to_is_train = dict(zip(train_test_split_df["stim_id"], train_test_split_df["is_train"]))
+            mworks_df["is_train"] = mworks_df["stimulus_presented"].map(stimulus_id_to_is_train)
+
+            # If the filename is on the train test split csv use that one
+            if "filename" in train_test_split_df.columns:
+                stimulus_id_to_filename = dict(zip(train_test_split_df["stim_id"], train_test_split_df["filename"]))
+                file_path_list = mworks_df["stimulus_presented"].map(stimulus_id_to_filename)
+            else:
+                file_path_list = [
+                    self.stimuli_folder / f"{stimuli_number}.mp4" for stimuli_number in mworks_df["stimulus_presented"]
+                ]
+
+            # Filter to training data only
+            mworks_df = mworks_df.query("is_train == True")
 
         if stub_test:
-            mwkorks_df = mwkorks_df.iloc[:10]
+            mworks_df = mworks_df.iloc[:10]
 
-        columns = mwkorks_df.columns
+        columns = mworks_df.columns
         assert ground_truth_time_column in columns, f"Column {ground_truth_time_column} not found in {columns}"
+        image_presentation_time_seconds = mworks_df[ground_truth_time_column] / 1e6
 
-        image_presentation_time_seconds = mwkorks_df[ground_truth_time_column].values / 1e6
-        stimuli_presented = mwkorks_df.stimulus_presented.values
+        # If the mworks does not contain stimulus_filename add it with an heurisitc
+        if "stimulus_filenames" in mworks_df.columns:
+            stimulus_filenames = mworks_df["stimulus_filenames"].to_list()
+        else:
+            stimulus_filenames = [
+                self.stimuli_folder / f"{stimuli_number}.mp4" for stimuli_number in mworks_df["stimulus_presented"]
+            ]
 
-        file_path_list = [self.stimuli_folder / f"{stimuli_number}.mp4" for stimuli_number in stimuli_presented]
-        missing_file_path = [file_path for file_path in file_path_list if not file_path.is_file()]
+        file_path_list = mworks_df["stimulus_filename"].to_list()
+
+        missing_file_path = [file_path for file_path in stimulus_filenames if not file_path.is_file()]
         assert len(missing_file_path) == 0, f"Missing files: {missing_file_path}"
 
         timestamps_per_video = []
