@@ -1,9 +1,9 @@
 """Primary script to run to convert an entire session for of data using the NWBConverter."""
 
-import re
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -51,12 +51,14 @@ def convert_session_to_nwb(
     add_psth: bool = False,
     stimuli_are_video: bool = False,
     add_stimuli_media_to_nwb: bool = False,
-    thresholindg_pipeline_kwargs: dict = None,
-    psth_kwargs: dict = None,
+    thresholindg_pipeline_kwargs: Optional[dict] = None,
+    psth_kwargs: Optional[dict] = None,
     ground_truth_time_column: str = "samp_on_us",
     add_amplifier_data_to_nwb: bool = False,
-    probe_info_path: str | Path | None = None,
+    probe_info_path: Optional[str | Path] = None,
     add_psth_in_pipeline_format_to_nwb: bool = True,
+    train_test_split_data_file_path: Optional[str | Path] = None,
+    is_stimuli_one_indexed: bool = False,
 ) -> Path:
 
     if verbose:
@@ -83,6 +85,8 @@ def convert_session_to_nwb(
     stimulus_name_camel_case = "".join([word.capitalize() for word in stimulus_name.split("_")])
 
     session_id = f"{project_name_camel_case}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
+    # Remove __ from the session_id for fields that are not included
+    session_id = session_id.replace("__", "_")
     nwbfile_path = output_dir_path / f"{session_id}.nwb"
 
     if verbose:
@@ -109,8 +113,15 @@ def convert_session_to_nwb(
         ecephys_interface = UtahArrayProbeInterface(file_path=probe_info_path)
 
     # Behavioral Trials Interface
-    behavioral_trials_interface = BehavioralTrialsInterface(file_path=mworks_processed_file_path)
-    conversion_options["Behavior"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)
+    behavioral_trials_interface = BehavioralTrialsInterface(
+        file_path=mworks_processed_file_path,
+        train_test_split_data_file_path=train_test_split_data_file_path,
+    )
+    conversion_options["Behavior"] = dict(
+        stub_test=stub_test,
+        ground_truth_time_column=ground_truth_time_column,
+        is_stimuli_one_indexed=is_stimuli_one_indexed,
+    )
 
     # Build the converter pipe with the previously defined data interfaces
     data_interfaces_dict = {
@@ -135,6 +146,7 @@ def convert_session_to_nwb(
                 folder_path=stimuli_folder,
                 image_set_name=project_name,
                 verbose=verbose,
+                train_test_split_data_file_path=train_test_split_data_file_path,
             )
 
         conversion_options["Stimuli"] = dict(stub_test=stub_test, ground_truth_time_column=ground_truth_time_column)

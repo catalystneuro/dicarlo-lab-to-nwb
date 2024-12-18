@@ -94,9 +94,7 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
             "stim_on_time_ms": data[data.name == "stim_on_time"]["data"].values[-1] / 1000.0,
             "stim_off_time_ms": data[data.name == "stim_off_time"]["data"].values[-1] / 1000.0,
             "stim_on_delay_ms": data[data.name == "stim_on_delay"]["data"].values[-1] / 1000.0,
-            "stimulus_size_degrees": data[data.name == "stimulus_size_deg"]["data"].values[
-                -1
-            ],  # for 'gestalt_control' & 'SFM_*'
+            "stimulus_size_degrees": data[data.name == "stimulus_size_deg"]["data"].values[-1],  # for 'gestalt_control' & 'SFM_*'
             "fixation_window_size_degrees": data[data.name == "fixation_window_size"]["data"].values[-1],
             "fixation_point_size_degrees": data[data.name == "fixation_point_size_min"]["data"].values[-1],
         }

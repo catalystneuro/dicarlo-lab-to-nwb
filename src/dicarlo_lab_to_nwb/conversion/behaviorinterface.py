@@ -1,6 +1,7 @@
 """Primary class for converting experiment-specific behavior."""
 
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -14,8 +15,15 @@ class BehavioralTrialsInterface(BaseDataInterface):
 
     keywords = ["behavior"]
 
-    def __init__(self, file_path: str | Path):
+    def __init__(
+        self,
+        file_path: str | Path,
+        train_test_split_data_file_path: Optional[str | Path] = None,
+    ):
         self.file_path = Path(file_path)
+        self.train_test_split_data_file_path = (
+            Path(train_test_split_data_file_path) if train_test_split_data_file_path else None
+        )
 
     def get_metadata(self) -> DeepDict:
         # Automatically retrieve as much metadata as possible from the source files available
@@ -29,6 +37,7 @@ class BehavioralTrialsInterface(BaseDataInterface):
         metadata: dict | None = None,
         stub_test: bool = False,
         ground_truth_time_column: str = "samp_on_us",
+        is_stimuli_one_indexed: bool = False,
     ):
         # In this experiment setup the presentation of stimuli is batched as groups of at most 8 images.
         # Every presentation starts with a stim_on_time, then up to 8 images are presented
@@ -36,8 +45,21 @@ class BehavioralTrialsInterface(BaseDataInterface):
         # The extract time of the presentation is samp_on_us or photo_diode_on_us.
         # We will make every image presentation a trial.
 
+        # Note
+        # In mworks the stimuli_indices are zero indexed.
+        # On filenames and on the train-test-split csv the indices are 1-indexed for images and
+        # 0 indexed for videos.
+
         dtype = {"stimulus_presented": np.uint32, "fixation_correct": bool}
         mworks_df = pd.read_csv(self.file_path, dtype=dtype)
+
+        if self.train_test_split_data_file_path is not None:
+            train_test_split_df = pd.read_csv(self.train_test_split_data_file_path)
+            offset = 1 if is_stimuli_one_indexed else 0
+            stimulus_index_for_test_data = -1
+            offuscate = lambda row: row["stim_id"] - offset if row["is_train"] else stimulus_index_for_test_data
+            offuscate_map = {row["stim_id"]: offuscate(row) for _, row in train_test_split_df.iterrows()}
+            mworks_df["stimulus_presented"] = mworks_df["stimulus_presented"].map(offuscate_map)
 
         if stub_test:
             mworks_df = mworks_df.iloc[:100]
