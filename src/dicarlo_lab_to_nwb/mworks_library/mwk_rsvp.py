@@ -1,19 +1,10 @@
-import logging
 import os
 import sys
-
-# from mworks_library.mwk2reader import MWKFile
-# from mwk2reader import MWKFile
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
-
-# debugging
 from dicarlo_lab_to_nwb.mworks_library.mwk2reader import MWKFile
-
-_logger = logging.getLogger(__name__)
 
 
 def equal_for_all_trials(events):
@@ -353,7 +344,6 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
 if __name__ == "__main__":
     # folder structure
     # todays_path = Path(root_dir) / subjectName / stimulusSet / sessionDate
-    # todays_path = Path('/Users/yoon/raw_data/Apollo/Monkeyvalence/20240924/normalizers_240924_123021')
     todays_path = Path("/Users/yoon/raw_data/Apollo/test/20240701/normalizers_240701_131011")
 
     print(f"Processing {todays_path}...\n")
@@ -376,16 +366,6 @@ if __name__ == "__main__":
         output_dir = todays_path / "processed"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # # run parser
-        # if "normalizer" in mworks_file.name:
-        #     mwk_rsvp.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-        # else:
-        #     mwk_rsvp_new.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-        # mwk_rsvp.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-
-        # debugging
-        from mwk_rsvp import dump_events_rsvp
-
-        dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-
-        print(f"MWorks parsed {mworks_file}")
+        # run parser
+        from dicarlo_lab_to_nwb.mworks_library import mwk_rsvp
+        mwk_rsvp.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)

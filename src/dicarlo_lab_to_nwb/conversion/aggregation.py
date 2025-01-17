@@ -7,7 +7,7 @@ import numpy as np
 import pynwb
 from pynwb import NWBHDF5IO, NWBFile
 from tqdm.auto import tqdm
-
+import pandas as pd
 from dicarlo_lab_to_nwb.conversion.probe import UtahArrayProbeInterface
 
 
@@ -248,13 +248,62 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
                 name = f"psth_session_data_{session_start_time}"
 
             dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
+            
+            # Add PSTH time bins
+            psth_bin_width_s = (1/1000.0) * source_nwb.processing['ecephys']['BinnedAlignedSpikesToStimulus'].bin_width_in_milliseconds
+            psth_start_s = (1/1000.0) * source_nwb.processing['ecephys']['BinnedAlignedSpikesToStimulus'].milliseconds_from_event_to_first_bin
+            psth_num_bins = source_nwb.processing['ecephys']['BinnedAlignedSpikesToStimulus'].number_of_bins
+            psth_timebins_s = np.round(np.arange(psth_start_s, psth_start_s + psth_num_bins*psth_bin_width_s, psth_bin_width_s), 3)
+            dest_nwb.add_scratch(psth_timebins_s, name=f"timebins_{name}", description="Time bins in units of seconds for PSTH data")
 
             # Add units table
             add_units_table(source_nwb, dest_nwb, is_normalizer)
 
             # Add trials table
             add_trials_table(source_nwb, dest_nwb, is_normalizer)
+            
+            # Add unique stimulus meta info (mworks ID and filename; hash info used in mwk_rsvp.py, but in here as video hash is not supported in MWorks 0.13)
+            if not is_normalizer and "stimulus_meta" not in dest_nwb.stimulus.keys():
+                session_stim_events_df = source_nwb.trials.to_dataframe()
+                stimuli_presentation_id = session_stim_events_df["stimulus_presented"]
+                stimuli_filename = session_stim_events_df["stimulus_filename"]
+                # check if the dataframe contains column name for stimulus hash
+                if "image_hash" in session_stim_events_df.columns:
+                    image_hash = session_stim_events_df["image_hash"]
+                    unique_pairs_set = set(zip(stimuli_presentation_id, stimuli_filename, image_hash))
+                    unique_pairs_list = list(unique_pairs_set)
+                    unique_pairs_sorted = sorted(unique_pairs_list, key=lambda x: x[0])
+                    stimuli_id_sorted = [pair[0] for pair in unique_pairs_sorted]
+                    stimuli_filename_sorted = [pair[1] for pair in unique_pairs_sorted]
+                    stimuli_hash_sorted = [pair[2] for pair in unique_pairs_sorted]
 
+                    # make dataframe for sorted features
+                    stimuli_df = pd.DataFrame({"stimuli_presentation_id": stimuli_id_sorted,
+                                                "stimuli_filename": stimuli_filename_sorted,
+                                                "stimuli_hash": stimuli_hash_sorted})
+                else:
+                    unique_pairs_set = set(zip(stimuli_presentation_id, stimuli_filename))
+                    unique_pairs_list = list(unique_pairs_set)
+                    unique_pairs_sorted = sorted(unique_pairs_list, key=lambda x: x[0])
+                    stimuli_id_sorted = [pair[0] for pair in unique_pairs_sorted]
+                    stimuli_filename_sorted = [pair[1] for pair in unique_pairs_sorted]
+
+                    # make dataframe for sorted features
+                    stimuli_df = pd.DataFrame({"stimuli_presentation_id": stimuli_id_sorted,
+                                                "stimuli_filename": stimuli_filename_sorted,
+                                                })
+                # make dynamic table
+                stim_meta_table = pynwb.misc.DynamicTable(name="stimulus_meta", description="Stimulus labels and metadata")
+                for column in stimuli_df.columns:
+                    # new_table.add_column(name=column, description=column, data=stimuli_df[column].values)
+                    stim_meta_table.add_column(name=column, description="")
+
+                for row in stimuli_df.iterrows():
+                    row_dict = row[1].to_dict()
+                    stim_meta_table.add_row(**row_dict)
+
+                dest_nwb.add_stimulus(stim_meta_table)
+            
             dest_io.write(dest_nwb)
 
     return {
@@ -303,8 +352,9 @@ def create_destination_nwbfile(output_path: Path, session_id: str) -> None:
 def aggregate_nwbfiles(
     file_paths: List[Union[str, Path]],
     output_folder_path: Union[str, Path],
-    pipeline_version: str = "DiLorean",
+    pipeline_version: str = "EVPP_0.9",
     is_unit_valid: Optional[np.ndarray] = None,
+    qc_dataframes: List[pd.DataFrame] = None,
     verbose: bool = True,
 ) -> Path:
     """
@@ -428,6 +478,15 @@ def aggregate_nwbfiles(
         # Create and add concatenated PSTH
         concatenated_psth = np.concatenate(session_psths, axis=2)
 
+        # Add merged PSTH time bins info from first session PSTH
+        session_key = next(key for key in nwbfile.scratch.keys() if key.startswith("timebins_psth_session_data_"))
+        timebins_s = nwbfile.scratch[session_key].data[:]
+        nwbfile.add_scratch(
+            timebins_s, 
+            name="timebins_psth_session_data_concatenated", 
+            description="Time bins in units of seconds for concatenated PSTH",
+        )       
+        
         # Filter units using is_unit_valid array
         if is_unit_valid is not None:
             number_of_units = concatenated_psth.shape[0]
@@ -440,6 +499,11 @@ def aggregate_nwbfiles(
                     "Please ensure both arrays contain the same number of units."
                 )
             concatenated_psth = concatenated_psth[is_unit_valid, ...]
+            nwbfile.add_scratch(
+                is_unit_valid.tolist(),
+                name="sites_psth_session_data_concatenated",
+                description="Boolean array indicating which sites are valid (visually-driven) from raw PSTH",
+            )
 
         nwbfile.add_scratch(
             concatenated_psth,
@@ -447,6 +511,22 @@ def aggregate_nwbfiles(
             description="Concatenated PSTH from multiple files",
         )
 
+        # add QC dataframes (add_analysis)
+        if qc_dataframes is not None:
+            for i, qc_df in enumerate(qc_dataframes):
+                # make dynamic table for each qc dataframe
+                qc_table = pynwb.misc.DynamicTable(name=f"normalizer_analysis_{i}", description="quality control (EVPP 0.9) analysis from one normalizer recording")
+                for column in qc_df.columns:
+                    # new_table.add_column(name=column, description=column, data=stimuli_df[column].values)
+                    qc_table.add_column(name=column, description="")
+
+                for row in qc_df.iterrows():
+                    row_dict = row[1].to_dict()
+                    qc_table.add_row(**row_dict)
+
+                nwbfile.add_analysis(qc_table)
+
+                
         io.write(nwbfile)
 
     return aggregated_nwbfile_path

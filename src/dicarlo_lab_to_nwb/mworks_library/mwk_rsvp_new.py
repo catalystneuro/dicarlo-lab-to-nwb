@@ -1,17 +1,10 @@
 import os
 import sys
-
-# from mwk2reader import MWKFile
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
-
-# import scipy.io as sio
 from dicarlo_lab_to_nwb.mworks_library.mwk2reader import MWKFile
-
-# import matplotlib.pyplot as plt
 
 
 def equal_for_all_trials(events):
@@ -37,6 +30,26 @@ def get_events(event_file, name):
     data = pd.DataFrame(data)
     data = data.sort_values(by="time").reset_index(drop=True)
     return data
+
+
+def extract_images_from_sdu(data):
+    images = []
+    try:
+        for item in data:
+            try:
+                if item["type"] == "image":
+                    images.append(item)
+            except:
+                pass
+    except:
+        pass
+    return images
+
+
+def extract_image_from_sdu(data):
+    images = extract_images_from_sdu(data)
+    assert len(images) == 1
+    return images.pop()
 
 
 def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_event_filepath, output_dir: str = "./"):
