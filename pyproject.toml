@@ -25,7 +25,8 @@ dependencies = [
   "matplotlib",
   "psutil",
   "numba",
-  "natsort"
+  "natsort",
+  "msgpack"
 ]
 
 [project.urls]
