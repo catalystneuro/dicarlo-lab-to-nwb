@@ -16,16 +16,17 @@ classifiers = [
 
 
 dependencies = [
-  "neuroconv[video] == 0.6.5",
+  "neuroconv[video] == 0.6.7",
   "spikeinterface == 0.101.2",
   "probeinterface == 0.2.24",
-  "neo @ git+https://github.com/NeuralEnsemble/python-neo@master",
+  "neo == 0.14",
   "pillow>=10.3.0",
   "ndx-binned-spikes==0.2.1",
   "matplotlib",
   "psutil",
   "numba",
-  "natsort"
+  "natsort",
+  "msgpack"
 ]
 
 [project.urls]
