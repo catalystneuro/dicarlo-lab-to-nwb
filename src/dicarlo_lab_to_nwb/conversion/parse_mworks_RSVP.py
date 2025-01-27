@@ -5,7 +5,7 @@ from pathlib import Path
 
 from spikeinterface.extractors import IntanRecordingExtractor
 
-from dicarlo_lab_to_nwb.mworks_library import mwk_bars, mwk_rsvp, mwk_rsvp_new
+from dicarlo_lab_to_nwb.mworks_library import mwk_bars, mwk_rsvp
 
 
 def parse_mworks_file(mworks_folder: str | Path, raw_data_folder: str | Path, output_folder: str | Path):
@@ -39,7 +39,7 @@ def parse_mworks_file(mworks_folder: str | Path, raw_data_folder: str | Path, ou
             sampling_freq, mworks_filepath, photodiode_file, digi_event_file, output_folder
         )
     else:
-        output_filepath = mwk_rsvp_new.dump_events_rsvp(
+        output_filepath = mwk_rsvp.dump_events_rsvp(
             sampling_freq, mworks_filepath, photodiode_file, digi_event_file, output_folder
         )
 
