@@ -68,7 +68,7 @@ def convert_project_sessions(
 
     progress_bar = verbose
     # job_kwargs = dict(n_jobs=-1, progress_bar=progress_bar, chunk_duration=60.0)  # Fixed chunks to 60 seconds
-    job_kwargs = dict(n_jobs=-1, progress_bar=progress_bar, chunk_duration=10.0)  # Fixed chunks to 10 seconds
+    job_kwargs = dict(n_jobs=1, progress_bar=progress_bar, chunk_duration=10.0)  # Fixed chunks to 10 seconds
 
     thresholding_pipeline_kwargs = {
         "f_notch": 60.0,  # Frequency for the notch filter
@@ -115,12 +115,17 @@ def convert_project_sessions(
         # session-level information
         sessions = experiment.get("sessions", [])
         for session in sessions:
+            # folder paths
             stimulus_name = session.get("stimulus_name")
             stimulus_folder = Path(session.get("stimulus_folder"))
             mworks_folder = Path(session.get("mworks_folder"))
             data_folder = Path(session.get("data_folder"))
             intan_file_path = data_folder / "info.rhd"
             assert intan_file_path.exists(), f"{intan_file_path} does not exist"
+
+            # are the stimuli video or image?
+            stimulus_type = str(session.get("stimulus_type"))
+            stimuli_are_video = "video" in stimulus_type.lower()
 
             # psth time dimensions
             psth_start_s = session.get("psth_start_s")
@@ -207,7 +212,9 @@ def convert_project_sessions(
                     for row in qm_df.iterrows():
                         table.add_row(row[1].to_dict())
 
-                    nwbfile.add_scratch(table)
+                    nwbfile.add_scratch(table,
+                                        name="quality_control_table",
+                                        description="Quality control metrics from normalizer set",)
                     qc_dataframes.append(qm_df)
 
     stacked_metrics = pd.concat(
@@ -220,24 +227,26 @@ def convert_project_sessions(
         boolean_stacked = stacked_metrics < valid_unit_threshold
         valid_units = boolean_stacked.all(axis=1)
 
-    aggregate_nwbfiles(session_nwb_filepaths, nwb_output_folder, pipeline_version, valid_units)
+    aggregated_nwbfile_path = aggregate_nwbfiles(session_nwb_filepaths, 
+                                                 nwb_output_folder, 
+                                                 pipeline_version, 
+                                                 valid_units,
+                                                 qc_dataframes)
 
+
+# if __name__ == "__main__":
+#     project_config_folder = Path("/Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/dicarlo-lab-to-nwb-testing")
+#     project_config_path = project_config_folder / "project_config_simulation.yaml"
+#     example_project_config = project_config_path
+#     convert_project_sessions(example_project_config)
 
 if __name__ == "__main__":
-    project_config_folder = Path("/Users/yoon/Dropbox (MIT)/dorsal_ventral/pipeline_lab/dicarlo-lab-to-nwb-testing")
-    project_config_path = project_config_folder / "project_config_simulation.yaml"
-    example_project_config = project_config_path
+    import sys
 
-    # example_project_config = Path(__file__).parent / "project_config_2.yaml"
-    convert_project_sessions(example_project_config)
-    
-    # import sys
+    if len(sys.argv) < 2:
+        print("Usage: python convert_project.py <config.yaml file path>")
+        sys.exit(1)
 
-    # if len(sys.argv) < 2:
-    #     print("Usage: python convert_project.py <config.yaml file path>")
-    #     sys.exit(1)
-
-    # # experiment ID's
-    # project_config_path = sys.argv[1]
-    # convert_project_sessions(project_config_path)
+    project_config_path = sys.argv[1]
+    convert_project_sessions(project_config_path)
 

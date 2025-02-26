@@ -1,19 +1,10 @@
-import logging
 import os
 import sys
-
-# from mworks_library.mwk2reader import MWKFile
-# from mwk2reader import MWKFile
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
-
-# debugging
 from dicarlo_lab_to_nwb.mworks_library.mwk2reader import MWKFile
-
-_logger = logging.getLogger(__name__)
 
 
 def equal_for_all_trials(events):
@@ -98,7 +89,7 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
             "fixation_window_size_degrees": data[data.name == "fixation_window_size"]["data"].values[-1],
             "fixation_point_size_degrees": data[data.name == "fixation_point_size_min"]["data"].values[-1],
         }
-    else:
+    elif "stimulus_size" in filtered_names:
         output = {
             "stim_on_time_ms": data[data.name == "stim_on_time"]["data"].values[-1] / 1000.0,
             "stim_off_time_ms": data[data.name == "stim_off_time"]["data"].values[-1] / 1000.0,
@@ -107,6 +98,16 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
             "fixation_window_size_degrees": data[data.name == "fixation_window_size"]["data"].values[-1],
             "fixation_point_size_degrees": data[data.name == "fixation_point_size_min"]["data"].values[-1],
         }
+    else:
+        output = {
+            "stim_on_time_ms": data[data.name == "stim_on_time"]["data"].values[-1] / 1000.0,
+            "stim_off_time_ms": data[data.name == "stim_off_time"]["data"].values[-1] / 1000.0,
+            "stim_on_delay_ms": data[data.name == "stim_on_delay"]["data"].values[-1] / 1000.0,
+            "stimulus_size_degrees": 8.0,  # for 'normalizers'
+            "fixation_window_size_degrees": data[data.name == "fixation_window_size"]["data"].values[-1],
+            "fixation_point_size_degrees": data[data.name == "fixation_point_size_min"]["data"].values[-1],
+        }
+
 
     ###########################################################################
     # Add column in data to indicate whether stimulus was first in trial or not
@@ -140,41 +141,6 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     # Add `first_in_trial` info to other data frame too
     correct_fixation_df["first_in_trial"] = stimulus_presented_df["first_in_trial"]
 
-    ###########################################################################
-    # Extract image file hash from #stimDisplayUpdate events
-    ###########################################################################
-    stimulus_type_list = []
-    filepath_list = []
-    file_hash_list = []
-    sdu_events = []
-    for e_i in event_file.get_events_iter(codes=["#stimDisplayUpdate"]):
-        for d_i in e_i.data:
-            if d_i.get("type") == "image":
-                sdu_events.append(e_i)
-                filepath = d_i["filename"]
-                filepath_list.append(Path(filepath).name)
-                file_hash_list.append(d_i["file_hash"])
-                stimulus_type_list.append("image")
-                break
-            elif d_i.get("type") == "video":
-                if d_i.get("current_video_time_seconds") == 0.0:
-                    sdu_events.append(e_i)
-                    filepath = d_i["filename"]
-                    filepath_list.append(Path(filepath).name)
-                    file_hash_list.append("")  # No hash for videos
-                    stimulus_type_list.append("video")
-                break
-            elif d_i.get("type") == "audio":
-                stimulus_type = "audio"
-                stimulus_type_list.append("audio")
-                filepath = d_i["filename"]
-                filepath_list.append(Path(filepath).name)
-                print("Audio stimulus detected. Not supported yet")
-                break
-
-    stimulus_presented_df["stimulus_type"] = stimulus_type_list
-    stimulus_presented_df["filename"] = filepath_list
-    stimulus_presented_df["image_hash"] = file_hash_list
 
     ###########################################################################
     # Add column to indicate order in trial (1 2 3 1 2 3 etc.)
@@ -206,9 +172,6 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
         stimulus_presented_df = stimulus_presented_df[: len(samp_on)]
         correct_fixation_df = correct_fixation_df[: len(samp_on)]
 
-    # print(f"samp_on: {len(samp_on)}")
-    # print(f"stimulus_presented_df: {len(stimulus_presented_df)}")
-    # samp_on = samp_on[:len(correct_fixation_df)]   # If you have one extra stimulus event but not fixation, use this
     if len(correct_fixation_df) < len(samp_on):
         samp_on = samp_on[: len(correct_fixation_df)]
 
@@ -259,6 +222,130 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
         if x / 1000.0 > 40:
             print(f"Warning: Sample {i} has delay of {x / 1000.} ms")
 
+
+     ###########################################################################
+    # Extract image file hash from #stimDisplayUpdate events
+    ###########################################################################
+    stimulus_type_list = []
+    filepath_list = []
+    file_hash_list = []
+    
+    # track video events separately in case there are video stimuli
+    video_sdu_times = []
+    sdu_times = []
+    in_video = False
+    video_info = None  # Store current video info
+    
+    for e_i in event_file.get_events_iter(codes=["#stimDisplayUpdate"]):
+        has_video = any(data_i.get('type')=='video' for data_i in e_i.data)
+        
+        if has_video:
+            if not in_video:
+                # New video starting
+                video_sdu_times.append(e_i.time)
+                in_video = True
+                # Store video info
+                for d_i in e_i.data:
+                    if d_i.get("type") == "video":
+                        video_info = {
+                            "type": "video",
+                            "filename": Path(d_i["filename"]).name,
+                            "file_hash": ""  # No hash for videos yet for MWorks 0.12
+                        }
+                        # Add video info only once at start
+                        stimulus_type_list.append(video_info["type"])
+                        filepath_list.append(video_info["filename"])
+                        file_hash_list.append(video_info["file_hash"])
+                        break
+            # Skip adding info for subsequent video frames
+            continue
+            
+        else: # non-video stimuli
+            # Reset video state
+            in_video = False
+            video_info = None
+            
+        # Handle non-video stimuli
+        for d_i in e_i.data:
+            sdu_times.append(e_i.time)
+            if d_i.get("type") == "image":
+                stimulus_type_list.append("image")
+                filepath_list.append(Path(d_i["filename"]).name)
+                file_hash_list.append(d_i["file_hash"])
+                break
+            elif d_i.get("type") == "audio":
+                stimulus_type_list.append("audio")
+                filepath_list.append(Path(d_i["filename"]).name)
+                file_hash_list.append("")
+                print("Audio stimulus detected. Not supported yet")
+                break
+            
+    
+    # (YB) 02/26/2025: patch for VIDEO only experiments.
+    # Detected cases where there are more stimulus presentations than #stimDisplayUpdate events with videos.
+    # Video SDU events typically occur after the stimulus presentation with a delay ranging from 9ms to 30ms, but this is not always the case.
+    if 'video' in stimulus_type_list:
+        # Get timestamps from stimulus_presented_df
+        stim_times = stimulus_presented_df['time'].values
+        stimulus_presented_df_skip_idx = []
+
+        # Align timestamps and adjust lists accordingly
+        aligned_type_list = []
+        aligned_filepath_list = []
+        aligned_hash_list = []
+        aligned_stim_times = [] # for debugging
+        aligned_sdu_times = [] # for debugging
+        aligned_samp_on_us = [] 
+        aligned_photodiode_on_us = []
+        stim_idx = 0
+        sdu_idx = 0
+        
+        while stim_idx < len(stim_times) and sdu_idx < len(video_sdu_times):
+            time_diff = video_sdu_times[sdu_idx] - stim_times[stim_idx]
+            
+            if time_diff > 0:
+                # If video SDU time is later than its own stimulus time, skip this stimulus time
+                print(f"Skipping trial time {stim_times[stim_idx]} with no video (diff w/ next video: {time_diff/1000:.2f}ms)")
+                # adjust stimulus_presented_df to match the aligned length
+                stimulus_presented_df_skip_idx.append(stim_idx)
+                stim_idx += 1
+            else:
+                # Add the SDU info and advance both indices
+                aligned_type_list.append(stimulus_type_list[sdu_idx])
+                aligned_filepath_list.append(filepath_list[sdu_idx])
+                aligned_hash_list.append(file_hash_list[sdu_idx])
+                aligned_stim_times.append(stim_times[stim_idx])
+                aligned_sdu_times.append(sdu_times[sdu_idx])
+
+                aligned_samp_on_us.append(samp_on[stim_idx])
+                aligned_photodiode_on_us.append(photodiode_on[stim_idx])
+
+                stim_idx += 1
+                sdu_idx += 1
+        
+        # Update the lists with aligned versions
+        stimulus_type_list = aligned_type_list
+        filepath_list = aligned_filepath_list
+        file_hash_list = aligned_hash_list
+        samp_on = aligned_samp_on_us
+        photodiode_on = aligned_photodiode_on_us
+        # Trim stimulus_presented_df to match the aligned length
+        stimulus_presented_df = stimulus_presented_df[~stimulus_presented_df.index.isin(stimulus_presented_df_skip_idx)].reset_index(drop=True)
+        correct_fixation_df = correct_fixation_df[~correct_fixation_df.index.isin(stimulus_presented_df_skip_idx)].reset_index(drop=True)
+        # stimulus_presented_df = stimulus_presented_df.iloc[:len(stimulus_type_list)].reset_index(drop=True)
+        # correct_fixation_df = correct_fixation_df.iloc[:len(stimulus_type_list)].reset_index(drop=True)
+        
+        # Verify lengths match
+        assert len(stimulus_type_list) == len(stimulus_presented_df), \
+            f"Stimulus type list length ({len(stimulus_type_list)}) doesn't match presented stimuli ({len(stimulus_presented_df)})"
+        
+        print(f"\nFinal alignment: {len(stimulus_type_list)} stimuli")
+    
+    stimulus_presented_df["stimulus_type"] = stimulus_type_list
+    stimulus_presented_df["filename"] = filepath_list
+    stimulus_presented_df["image_hash"] = file_hash_list
+
+
     ###########################################################################
     # Get eye data
     ###########################################################################
@@ -275,33 +362,9 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
         eye_h.append(h)
         eye_v.append(v)
         eye_time.append(time)
-        # t1 = int(t - 1000 * 1000.)  # Start time (ms)
-        # t2 = int(t + (output['stim_on_time_ms'] + 2000) * 1000.)  # Stop time (ms)
-        # p = [event.data for event in event_file.get_events_iter(codes=['pupil_size_r'], time_range=[t1, t2])]
-        # p_time = [(event.time - t) / 1000. for event in event_file.get_events_iter(codes=['pupil_size_r'], time_range=[t1, t2])]
-        # assert len(p_time) == len(p)
-        # pupil_size.append(p)
-        # pupil_time.append(p_time)
+        
     assert len(eye_h) == len(stimulus_presented_df)
-    # assert len(pupil_size) == len(stimulus_presented_df)
     event_file.close()
-
-    ###########################################################################
-    # Double-check `correct_fixation` is actually correct by analyzing the
-    # `eye_h` and `eye_v` data
-    ###########################################################################
-    # # Threshold to check against to determine if we have enough eye data for given stimulus presentation
-    # threshold = output['stim_on_time_ms'] // 2
-    #
-    # for i in range(len(eye_h)):
-    #     if correct_fixation_df.iloc[i]['data'] == 0:  # Skip if already marked incorrect
-    #         continue
-    #
-    #     if len(eye_h[i]) < threshold or len(eye_v[i]) < threshold:
-    #         correct_fixation_df.at[i, 'data'] = 0
-    #     elif np.any([np.abs(_) > output['fixation_window_size_degrees'] for _ in eye_h[i]]) or\
-    #             np.any([np.abs(_) > output['fixation_window_size_degrees'] for _ in eye_v[i]]):
-    #         correct_fixation_df.at[i, 'data'] = 0
 
     ###########################################################################
     # Save output
@@ -309,14 +372,9 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     output["stimulus_presented"] = stimulus_presented_df.data.values.tolist()
     output["fixation_correct"] = correct_fixation_df.data.values.tolist()
     output["stimulus_order_in_trial"] = stimulus_presented_df.stimulus_order_in_trial.values.tolist()
-    # output['eye_h_degrees'] = eye_h
-    # output['eye_v_degrees'] = eye_v
-    # output['eye_time_ms'] = eye_time
-    output["samp_on_us"] = samp_on.astype(int)  # Convert to int okay only if times are in microseconds
-    output["photodiode_on_us"] = photodiode_on.astype(int)  # Convert to int okay only if times are in microseconds
-    output["rig_delays_us"] = (photodiode_on - samp_on).astype(int)
-    # output['pupil_size_degrees'] = pupil_size
-    # output['pupil_time_ms'] = pupil_time
+    output["samp_on_us"] = np.array(samp_on).astype(int)  # Convert list to numpy array first
+    output["photodiode_on_us"] = np.array(photodiode_on).astype(int)  # This is already a numpy array
+    output["rig_delays_us"] = (photodiode_on - np.array(samp_on)).astype(int)
     output["stimulus_type"] = stimulus_presented_df["stimulus_type"]
     output["stimulus_filename"] = stimulus_presented_df["filename"]
     output["image_hash"] = stimulus_presented_df["image_hash"]
@@ -326,14 +384,9 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     output_filepath = os.path.join(
         output_dir, str(filename).split("/")[-1][:-5] + "_mwk.csv"
     )  # -5 in filename to delete the .mwk2 extension
-    # output.to_csv(filename.split('/')[-1][:-5] + '_mwk.csv', index=False)  # -5 in filename to delete the .mwk2 extension
     output.to_csv(output_filepath, index=False)
 
-    # # save another to raw folder (for buildign psths)
-    # data_folder = Path(photodiode_filepath).parent
-    # output_filepath_raw = os.path.join(data_folder, str(filename).split('/')[-1][:-5] + '_mwk.csv')  # -5 in filename to delete the .mwk2 extension
-    # output.to_csv(output_filepath_raw, index=False)
-
+    
     ###########################################################################
     # Repetitions
     ###########################################################################
@@ -353,7 +406,6 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
 if __name__ == "__main__":
     # folder structure
     # todays_path = Path(root_dir) / subjectName / stimulusSet / sessionDate
-    # todays_path = Path('/Users/yoon/raw_data/Apollo/Monkeyvalence/20240924/normalizers_240924_123021')
     todays_path = Path("/Users/yoon/raw_data/Apollo/test/20240701/normalizers_240701_131011")
 
     print(f"Processing {todays_path}...\n")
@@ -376,16 +428,6 @@ if __name__ == "__main__":
         output_dir = todays_path / "processed"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # # run parser
-        # if "normalizer" in mworks_file.name:
-        #     mwk_rsvp.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-        # else:
-        #     mwk_rsvp_new.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-        # mwk_rsvp.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-
-        # debugging
-        from mwk_rsvp import dump_events_rsvp
-
-        dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
-
-        print(f"MWorks parsed {mworks_file}")
+        # run parser
+        from dicarlo_lab_to_nwb.mworks_library import mwk_rsvp
+        mwk_rsvp.dump_events_rsvp(sampling_freq, mworks_file, photodiode_file, digi_event_file, output_dir)
