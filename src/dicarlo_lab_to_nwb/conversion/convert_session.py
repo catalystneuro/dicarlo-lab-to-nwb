@@ -334,10 +334,10 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
 
     # reliabilities
     n_samples = n_reps // 2
-    rhos_samples = get_NRR(rates, n_reps=n_samples)
+    rhos_samples = get_NRR(rates, n_samples=n_samples)
     rhos_mean_values = np.nanmean(rhos_samples, axis=1)
     print(f"half-split reliability (above 0.5) : {np.sum(rhos_mean_values>0.5)}")
-    srr_samples = get_NRR(rates, n_reps=2, correction=False)
+    srr_samples = get_NRR(rates, n_samples=2, correction=False)
     srr_mean_values = np.nanmean(srr_samples, axis=-1)
     print(f"SRR mean (valid units): {np.mean(srr_mean_values[valid_units])}")
 
@@ -348,7 +348,7 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
             "p_value": p_values,
             "valid_unit": valid_units,
             "mean_rate": mean_rates,
-            "response_latency_ms": latencies_s,
+            "response_latency_s": latencies_s,
             "half_split_reliability": rhos_mean_values,
             "single_repeat_reliability": srr_mean_values,
         }

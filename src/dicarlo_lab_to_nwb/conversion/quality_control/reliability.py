@@ -5,7 +5,7 @@ import scipy.stats as stats
 from dicarlo_lab_to_nwb.conversion.quality_control.latency import get_unit_latencies_from_reliabilities
 
 
-def get_NRR(rates, n_resamples=100, n_reps: int=2, correction: bool=True, seed: float=0) -> np.ndarray:
+def get_NRR(rates, n_resamples=200, n_samples: int=2, correction: bool=False, seed: float=0) -> np.ndarray:
     """
     calculate N-repeated reliability, in which the Pearson correlation between 
     two halves of the data is calculated from the mean of randomly drawing 
@@ -25,7 +25,7 @@ def get_NRR(rates, n_resamples=100, n_reps: int=2, correction: bool=True, seed: 
     list of reliability values for each unit
     """
     
-    n_units, n_stimuli_0, n_reps = rates.shape
+    n_units, n_stimuli, n_reps = rates.shape
     rho_resampled = np.full((n_units, n_resamples), np.nan)
     rand_state = np.random.RandomState(seed)
     for u in range(n_units):
@@ -33,14 +33,13 @@ def get_NRR(rates, n_resamples=100, n_reps: int=2, correction: bool=True, seed: 
         # remove repetitions with NaN
         nan_reps = np.isnan(rates_u).any(axis=0)
         rates_u = rates_u[:,~nan_reps]
-        n_stimuli, n_reps_u = rates_u.shape
-        assert n_stimuli_0 == n_stimuli, "number of stimuli should be the same across units"
+        n_stimuli_u, n_reps_u = rates_u.shape
         if n_reps_u < n_reps:
             n_reps = n_reps_u
         for i in range(n_resamples):
             
             # n-repeats
-            repeats_i = rand_state.choice(n_reps_u, n_reps, replace=False)
+            repeats_i = rand_state.choice(n_reps_u, n_samples, replace=False)
             rep_0 = np.nanmean(rates_u[:, repeats_i[:repeats_i.size//2]], axis=1)
             rep_1 = np.nanmean(rates_u[:, repeats_i[repeats_i.size//2:]], axis=1)
 
@@ -170,11 +169,10 @@ if __name__ == "__main__":
             print(f"mean latencies (valid units): {np.nanmean(latencies_s[valid_units])}")
 
             # reliabilities
-            n_samples = n_reps // 2
-            rhos_samples = get_NRR(rates, n_reps=n_samples)
+            rhos_samples = get_NRR(rates, n_samples=n_reps // 2)
             rhos_mean_values = np.nanmean(rhos_samples, axis=1)
             print(f"half-split reliability (above 0.5) : {np.sum(rhos_mean_values>0.5)}")
-            srr_samples = get_NRR(rates, n_reps=2, correction=False)
+            srr_samples = get_NRR(rates, n_samples=2, correction=False)
             srr_mean_values = np.nanmean(srr_samples, axis=-1)
             print(f"SRR mean (valid units): {np.mean(srr_mean_values[valid_units])}")
             # save results to a dataframe
