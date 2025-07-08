@@ -204,9 +204,11 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
 
     assert len(photodiode_on) == len(stimulus_presented_df)
 
-    # Convert both times to microseconds to match MWorks
-    photodiode_on = photodiode_on * 1_000_000 / SAMPLING_FREQUENCY_HZ  # in us
-    samp_on = samp_on * 1_000_000 / SAMPLING_FREQUENCY_HZ  # in us
+    # (YB) 04/28/2025: patch for photodiode timing fixed to 100ms: use 'stim_duration_us' instead of 100_000
+    # photodiode_on = np.asarray([min(v_on[(v_on >= s) & (v_on < (s + 100_000))]) for s in samp_on])
+    stim_duration_us = output["stim_on_time_ms"] * 1000.0 
+    photodiode_on = np.asarray([min(v_on[(v_on >= s) & (v_on < (s + stim_duration_us))]) for s in samp_on])
+
 
     ###########################################################################
     # Correct the times
