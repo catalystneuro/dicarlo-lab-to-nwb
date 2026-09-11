@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from hdmf.data_utils import AbstractDataChunkIterator, DataChunk
 from neuroconv.basedatainterface import BaseDataInterface
+from neuroconv.datainterfaces import ExternalImageInterface
 from neuroconv.datainterfaces.behavior.video.video_utils import VideoCaptureContext
 from neuroconv.utils import DeepDict
 from PIL import Image
@@ -203,46 +204,27 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
         uniq_stim_indices, uniq_stim_filenames = zip(*paired_uniq_lists)
         assert len(uniq_stim_indices) == len(uniq_stim_filenames), "Stimulus indices and filenames do not match"
 
-        image_list = []
-        image_mode_to_nwb_class = {"L": GrayscaleImage, "RGB": RGBImage, "RGBA": RGBAImage}
+        # The images are written as references to their files instead of embedding their pixels
+        image_file_paths = [self.stimuli_folder / stim_filename for stim_filename in uniq_stim_filenames]
+        missing_image_file_paths = [file_path for file_path in image_file_paths if not file_path.is_file()]
+        assert not missing_image_file_paths, f"Stimulus images not found: {missing_image_file_paths}"
 
-        for index, stim_filename in enumerate(
-            tqdm(uniq_stim_filenames, desc="Processing images", unit=" images", disable=not self.verbose)
-        ):
-            image_filename = stim_filename
-            image_file_path = self.stimuli_folder / f"{image_filename}"
-            assert image_file_path.is_file(), f"Stimulus image not found: {image_file_path}"
-            image = Image.open(image_file_path)
-            image_array = np.array(image)
-            # in case of 2 channels: grayscale + alpha
-            if image_array.ndim == 3 and image_array.shape[2] < 3:
-                image_array = image_array[..., 0]
-            image_kwargs = dict(name=image_filename, data=image_array, description="")
-
-            if image_array.ndim == 2:
-                image = GrayscaleImage(**image_kwargs)
-            elif image_array.ndim == 3:
-                if image_array.shape[2] == 3:
-                    image = RGBImage(**image_kwargs)
-                elif image_array.shape[2] == 4:
-                    image = RGBAImage(**image_kwargs)
-                else:
-                    raise ValueError(f"Image array has unexpected number of channels: {image_array.shape[2]}")
-            else:
-                raise ValueError(f"Image array has unexpected dimensions: {image_array.ndim}")
-
-            image_list.append(image)
-
-        images_container = Images(
-            name="stimuli",
-            images=image_list,
-            description=f"{self.image_set_name}",
-            order_of_images=ImageReferences("order_of_images", image_list),
+        external_image_interface = ExternalImageInterface(
+            file_paths=image_file_paths, metadata_key="stimuli", verbose=self.verbose
+        )
+        external_image_metadata = external_image_interface.get_metadata()
+        stimuli_metadata = external_image_metadata["Images"]["stimuli"]
+        stimuli_metadata["description"] = f"{self.image_set_name}"
+        for file_path in image_file_paths:
+            stimuli_metadata["images"][str(file_path)]["name"] = file_path.name
+        external_image_interface.add_to_nwbfile(
+            nwbfile=nwbfile, metadata=external_image_metadata, parent_container="stimulus"
         )
 
-        nwbfile.add_stimulus(images_container)
-
         indexed_images = nwbfile.stimulus["stimuli"]
+        indexed_images.order_of_images = ImageReferences(
+            "order_of_images", [indexed_images.images[file_path.name] for file_path in image_file_paths]
+        )
 
         # Add the stimulus presentation index
         # Note that every time has to be pointed to the exact index
