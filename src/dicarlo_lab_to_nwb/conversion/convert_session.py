@@ -58,7 +58,6 @@ def convert_session_to_nwb(
     probe_info_path: Optional[str | Path] = None,
     add_psth_in_pipeline_format_to_nwb: bool = True,
     train_test_split_data_file_path: Optional[str | Path] = None,
-    is_stimuli_one_indexed: bool = False,
 ) -> Path:
 
     if verbose:
@@ -120,7 +119,6 @@ def convert_session_to_nwb(
     conversion_options["Behavior"] = dict(
         stub_test=stub_test,
         ground_truth_time_column=ground_truth_time_column,
-        is_stimuli_one_indexed=is_stimuli_one_indexed,
     )
 
     # Build the converter pipe with the previously defined data interfaces
@@ -139,6 +137,7 @@ def convert_session_to_nwb(
                 # video_copy_path=output_dir_path / "videos",
                 video_copy_path=None,  # Add a path if videos should be copied
                 verbose=verbose,
+                train_test_split_data_file_path=train_test_split_data_file_path,
             )
         else:
             stimuli_interface = SessionStimuliImagesInterface(

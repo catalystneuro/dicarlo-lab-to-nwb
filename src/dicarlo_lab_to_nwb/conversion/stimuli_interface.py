@@ -21,6 +21,8 @@ from pynwb.image import (
 )
 from tqdm.auto import tqdm
 
+from dicarlo_lab_to_nwb.conversion.train_test_split import redact_test_stimuli
+
 
 class SingleImageIterator(AbstractDataChunkIterator):
     """Simple iterator to return a single image. This avoids loading the entire image into memory at initializing
@@ -165,18 +167,9 @@ class SessionStimuliImagesInterface(StimuliImagesInterface):
 
         if self.train_test_split_data_file_path is not None:
             train_test_split_df = pd.read_csv(self.train_test_split_data_file_path)
-            # Create separate mappings for train status and filenames
-            stimulus_id_to_is_train = dict(zip(train_test_split_df["stim_id"] - 1, train_test_split_df["is_train"]))
-            mworks_df["is_train"] = mworks_df["stimulus_presented"].map(stimulus_id_to_is_train)
-
-            if "filename" in train_test_split_df.columns:
-                stimulus_id_to_filename = dict(zip(train_test_split_df["stim_id"] - 1, train_test_split_df["filename"]))
-                mworks_df["stimulus_filename"] = mworks_df["stimulus_presented"].map(stimulus_id_to_filename)
-            else:
-                mworks_df["stimulus_filename"] = [f"{stim_id}.png" for stim_id in mworks_df["stimulus_presented"]]
-
-            # Filter to training data only
-            mworks_df = mworks_df.query("is_train == True")
+            mworks_df = redact_test_stimuli(mworks_df=mworks_df, train_test_split_df=train_test_split_df)
+            # Test stimuli are left out of the file
+            mworks_df = mworks_df[mworks_df["stimulus_presented"] != -1]
 
         if stub_test:
             mworks_df = mworks_df.iloc[:10]
@@ -331,6 +324,7 @@ class SessionStimuliVideoInterface(BaseDataInterface):
         image_set_name: str,
         video_copy_path: str | Path = None,
         verbose: bool = False,
+        train_test_split_data_file_path: Optional[str | Path] = None,
     ):
         # This should load the data lazily and prepare variables you need
         self.file_path = Path(file_path)
@@ -341,6 +335,9 @@ class SessionStimuliVideoInterface(BaseDataInterface):
 
         assert self.stimuli_folder.is_dir(), f"Experiment stimuli folder not found: {self.stimuli_folder}"
         self.image_set_name = image_set_name
+        self.train_test_split_data_file_path = (
+            Path(train_test_split_data_file_path) if train_test_split_data_file_path else None
+        )
 
         self.verbose = verbose
 
@@ -357,21 +354,9 @@ class SessionStimuliVideoInterface(BaseDataInterface):
 
         if self.train_test_split_data_file_path is not None:
             train_test_split_df = pd.read_csv(self.train_test_split_data_file_path)
-            # Create separate mappings for train status and filenames
-            stimulus_id_to_is_train = dict(zip(train_test_split_df["stim_id"], train_test_split_df["is_train"]))
-            mworks_df["is_train"] = mworks_df["stimulus_presented"].map(stimulus_id_to_is_train)
-
-            # If the filename is on the train test split csv use that one
-            if "filename" in train_test_split_df.columns:
-                stimulus_id_to_filename = dict(zip(train_test_split_df["stim_id"], train_test_split_df["filename"]))
-                file_path_list = mworks_df["stimulus_presented"].map(stimulus_id_to_filename)
-            else:
-                file_path_list = [
-                    self.stimuli_folder / f"{stimuli_number}.mp4" for stimuli_number in mworks_df["stimulus_presented"]
-                ]
-
-            # Filter to training data only
-            mworks_df = mworks_df.query("is_train == True")
+            mworks_df = redact_test_stimuli(mworks_df=mworks_df, train_test_split_df=train_test_split_df)
+            # Test stimuli are left out of the file
+            mworks_df = mworks_df[mworks_df["stimulus_presented"] != -1]
 
         if stub_test:
             mworks_df = mworks_df.iloc[:10]
