@@ -6,27 +6,26 @@ readme = "README.md"
 authors = [{ name = "Heberto Mayorquin", email = "h.mayorquin@gmail.com" }]
 
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 classifiers = [
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
 
 
 dependencies = [
-  "neuroconv[video] == 0.6.7",
-  "spikeinterface == 0.101.2",
-  "probeinterface == 0.2.24",
-  "neo == 0.14",
+  "neuroconv[video,intan] == 0.10.2",
+  "spikeinterface == 0.104.9",
+  "probeinterface == 0.3.2",
+  "neo == 0.14.5",
   "pillow>=10.3.0",
-  "ndx-binned-spikes==0.2.1",
+  "ndx-binned-spikes==0.3.1",
   "matplotlib",
   "psutil",
   "numba",
   "natsort",
-  "msgpack"
+  "msgpack",
+  "scipy",
+  "tzdata"
 ]
 
 [project.urls]

@@ -24,7 +24,7 @@ class UtahArrayProbeInterface(BaseDataInterface):
     def add_to_nwbfile(self, nwbfile: NWBFile, metadata: Optional[dict] = None):
 
         probe_info_df = pd.read_csv(filepath_or_buffer=self.probe_info_path)
-        channel_ids = probe_info_df["Intan"].values
+        channel_ids = probe_info_df["Intan"].to_numpy(copy=True)
         channel_ids.sort()
         channel_ids = channel_ids.tolist()
         number_of_channels = len(channel_ids)

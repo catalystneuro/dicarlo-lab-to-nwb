@@ -11,7 +11,6 @@ from spikeinterface.core import (
     BaseSorting,
     ChunkRecordingExecutor,
     NumpySorting,
-    aggregate_units,
 )
 from spikeinterface.extractors import IntanRecordingExtractor, NwbRecordingExtractor
 from spikeinterface.preprocessing import ScaleRecording
@@ -501,33 +500,27 @@ def calculate_thresholding_events(
 
         dict_of_spikes_times_per_channel[probe_name] = spikes_times_per_channel
 
-    # Build sorting output
-    channel_locations = processed_recording.get_channel_locations()
-    sorting_list = []
-
-    for probe_name, spikes_times_per_channel in dict_of_spikes_times_per_channel.items():
-        spike_frames_per_channel = {
-            channel_id: (times * sampling_frequency).round().astype("uint")
-            for channel_id, times in spikes_times_per_channel.items()
-        }
-        probe_sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
-
-        if verbose:
-            print(f"Building sorting object for probe {probe_name}")
-            print(probe_sorting)
-
-        num_units = len(probe_sorting.get_unit_ids())
-        values = [probe_name] * num_units
-        values = np.asarray(values, dtype=object)
-        probe_sorting.set_property(key="probe", values=values)
-        sorting_list.append(probe_sorting)
-
-    sorting = aggregate_units(sorting_list=sorting_list)
-
-    # Preserve channel IDs and locations
+    # Build a single sorting keyed by channel ID. Aggregating per-probe sortings and renaming the units
+    # makes spikeinterface cache a full copy of the spike vector at each wrapper layer
     channel_ids = processed_recording.get_channel_ids()
-    sorting = sorting.rename_units(new_unit_ids=channel_ids)
+    channel_locations = processed_recording.get_channel_locations()
+    channel_probe_names = processed_recording.get_property("probe")
+
+    spikes_times_per_channel = {}
+    for probe_spikes_times_per_channel in dict_of_spikes_times_per_channel.values():
+        spikes_times_per_channel.update(probe_spikes_times_per_channel)
+
+    spike_frames_per_channel = {
+        channel_id: (spikes_times_per_channel[channel_id] * sampling_frequency).round().astype("uint")
+        for channel_id in channel_ids
+    }
+    sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
+    sorting.set_property(key="probe", values=np.asarray(channel_probe_names, dtype=object))
     sorting.set_property(key="unit_location_um", values=channel_locations)
+
+    if verbose:
+        print("Building sorting object")
+        print(sorting)
 
     # Clean up
     del recording

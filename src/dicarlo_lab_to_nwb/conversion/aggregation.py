@@ -4,10 +4,11 @@ from typing import List, Optional, Union
 
 import ndx_binned_spikes
 import numpy as np
+import pandas as pd
 import pynwb
 from pynwb import NWBHDF5IO, NWBFile
 from tqdm.auto import tqdm
-import pandas as pd
+
 from dicarlo_lab_to_nwb.conversion.probe import UtahArrayProbeInterface
 
 
@@ -121,7 +122,7 @@ def add_units_table(
         The newly created units table
     """
     units_table = source_nwbfile.units
-    session_start_time = source_nwbfile.session_start_time.replace(tzinfo=None)
+    session_start_time = source_nwbfile.session_start_time.strftime("%Y-%m-%dT%H-%M-%S")
 
     type_of_data = "normalizers" if is_normalizer else "session_data"
     name_in_aggregated_table = f"spike_times_{type_of_data}_{session_start_time}"
@@ -131,20 +132,35 @@ def add_units_table(
     session_spikes_times_module = dest_nwbfile.processing["session_spike_times"]
     session_spikes_times_module.add(new_units_table)
 
-    # Transfer columns and data
-    units_table_df = units_table.to_dataframe()
-    canonical_unit_columns = ["spike_times", "electrodes"]
+    # Transfer the data column by column. Adding the units row by row with add_unit stores every spike time
+    # as a separate Python object, which takes about ten times the memory of the spike times themselves
+    number_of_units = len(units_table)
+    new_units_table.id.extend(list(range(number_of_units)))
 
     # Add non-canonical columns
-    for column in units_table_df.columns:
+    canonical_unit_columns = ["spike_times", "electrodes"]
+    for column in units_table.colnames:
         if column not in canonical_unit_columns:
-            new_units_table.add_column(name=column, description="")
+            new_units_table.add_column(name=column, description="", data=units_table[column][:])
 
-    # Add units
-    for row in units_table_df.iterrows():
-        row_dict = row[1].to_dict()
-        row_dict["electrodes"] = row_dict["electrodes"].index.to_numpy()
-        new_units_table.add_unit(**row_dict)
+    spike_times_index = units_table["spike_times"]
+    new_units_table.add_column(
+        name="spike_times",
+        description=spike_times_index.target.description,
+        data=spike_times_index[:],
+        index=True,
+    )
+
+    electrodes_index = units_table["electrodes"]
+    electrodes_end_indices = electrodes_index.data[:]
+    electrode_indices = np.split(electrodes_index.target.data[:], electrodes_end_indices[:-1])
+    new_units_table.add_column(
+        name="electrodes",
+        description=electrodes_index.target.description,
+        data=electrode_indices,
+        index=True,
+        table=dest_nwbfile.electrodes,
+    )
 
 
 def add_trials_table(
@@ -171,7 +187,7 @@ def add_trials_table(
     if trials_table is None:
         return None
 
-    session_start_time = source_nwbfile.session_start_time.replace(tzinfo=None)
+    session_start_time = source_nwbfile.session_start_time.strftime("%Y-%m-%dT%H-%M-%S")
 
     type_of_data = "normalizers" if is_normalizer else "session_data"
     name_in_aggregated_table = f"trials_table_{type_of_data}_{session_start_time}"
@@ -225,7 +241,7 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
         if session_id is None:
             raise ValueError(f"Session ID not found in {source_path}")
 
-        session_start_time = source_nwb.session_start_time.replace(tzinfo=None)
+        session_start_time = source_nwb.session_start_time.strftime("%Y-%m-%dT%H-%M-%S")
 
         # session_id = f"{project_name_camel_case}_{subject}_{stimulus_name_camel_case}_{session_date}_{session_time}_{pipeline_version}_thresholded"
 
@@ -248,20 +264,28 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
                 name = f"psth_session_data_{session_start_time}"
 
             dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
-            
+
             # Add PSTH time bins
-            psth_bin_width_s = (1/1000.0) * source_nwb.processing['ecephys']['BinnedAlignedSpikesToStimulus'].bin_width_in_milliseconds
-            psth_start_s = (1/1000.0) * source_nwb.processing['ecephys']['BinnedAlignedSpikesToStimulus'].milliseconds_from_event_to_first_bin
-            psth_num_bins = source_nwb.processing['ecephys']['BinnedAlignedSpikesToStimulus'].number_of_bins
-            psth_timebins_s = np.round(np.arange(psth_start_s, psth_start_s + psth_num_bins*psth_bin_width_s, psth_bin_width_s), 3)
-            dest_nwb.add_scratch(psth_timebins_s, name=f"timebins_{name}", description="Time bins in units of seconds for PSTH data")
+            psth_bin_width_s = (1 / 1000.0) * source_nwb.processing["ecephys"][
+                "BinnedAlignedSpikesToStimulus"
+            ].bin_width_in_ms
+            psth_start_s = (1 / 1000.0) * source_nwb.processing["ecephys"][
+                "BinnedAlignedSpikesToStimulus"
+            ].event_to_bin_offset_in_ms
+            psth_num_bins = source_nwb.processing["ecephys"]["BinnedAlignedSpikesToStimulus"].number_of_bins
+            psth_timebins_s = np.round(
+                np.arange(psth_start_s, psth_start_s + psth_num_bins * psth_bin_width_s, psth_bin_width_s), 3
+            )
+            dest_nwb.add_scratch(
+                psth_timebins_s, name=f"timebins_{name}", description="Time bins in units of seconds for PSTH data"
+            )
 
             # Add units table
             add_units_table(source_nwb, dest_nwb, is_normalizer)
 
             # Add trials table
             add_trials_table(source_nwb, dest_nwb, is_normalizer)
-            
+
             # Add unique stimulus meta info (mworks ID and filename; hash info used in mwk_rsvp.py, but in here as video hash is not supported in MWorks 0.13)
             if not is_normalizer and "stimulus_meta" not in dest_nwb.stimulus.keys():
                 session_stim_events_df = source_nwb.trials.to_dataframe()
@@ -278,9 +302,13 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
                     stimuli_hash_sorted = [pair[2] for pair in unique_pairs_sorted]
 
                     # make dataframe for sorted features
-                    stimuli_df = pd.DataFrame({"stimuli_presentation_id": stimuli_id_sorted,
-                                                "stimuli_filename": stimuli_filename_sorted,
-                                                "stimuli_hash": stimuli_hash_sorted})
+                    stimuli_df = pd.DataFrame(
+                        {
+                            "stimuli_presentation_id": stimuli_id_sorted,
+                            "stimuli_filename": stimuli_filename_sorted,
+                            "stimuli_hash": stimuli_hash_sorted,
+                        }
+                    )
                 else:
                     unique_pairs_set = set(zip(stimuli_presentation_id, stimuli_filename))
                     unique_pairs_list = list(unique_pairs_set)
@@ -289,11 +317,16 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
                     stimuli_filename_sorted = [pair[1] for pair in unique_pairs_sorted]
 
                     # make dataframe for sorted features
-                    stimuli_df = pd.DataFrame({"stimuli_presentation_id": stimuli_id_sorted,
-                                                "stimuli_filename": stimuli_filename_sorted,
-                                                })
+                    stimuli_df = pd.DataFrame(
+                        {
+                            "stimuli_presentation_id": stimuli_id_sorted,
+                            "stimuli_filename": stimuli_filename_sorted,
+                        }
+                    )
                 # make dynamic table
-                stim_meta_table = pynwb.misc.DynamicTable(name="stimulus_meta", description="Stimulus labels and metadata")
+                stim_meta_table = pynwb.misc.DynamicTable(
+                    name="stimulus_meta", description="Stimulus labels and metadata"
+                )
                 for column in stimuli_df.columns:
                     # new_table.add_column(name=column, description=column, data=stimuli_df[column].values)
                     stim_meta_table.add_column(name=column, description="")
@@ -303,7 +336,7 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
                     stim_meta_table.add_row(**row_dict)
 
                 dest_nwb.add_stimulus(stim_meta_table)
-            
+
             dest_io.write(dest_nwb)
 
     return {
@@ -482,11 +515,11 @@ def aggregate_nwbfiles(
         session_key = next(key for key in nwbfile.scratch.keys() if key.startswith("timebins_psth_session_data_"))
         timebins_s = nwbfile.scratch[session_key].data[:]
         nwbfile.add_scratch(
-            timebins_s, 
-            name="timebins_psth_session_data_concatenated", 
+            timebins_s,
+            name="timebins_psth_session_data_concatenated",
             description="Time bins in units of seconds for concatenated PSTH",
-        )       
-        
+        )
+
         # Filter units using is_unit_valid array
         if is_unit_valid is not None:
             number_of_units = concatenated_psth.shape[0]
@@ -515,7 +548,10 @@ def aggregate_nwbfiles(
         if qc_dataframes is not None:
             for i, qc_df in enumerate(qc_dataframes):
                 # make dynamic table for each qc dataframe
-                qc_table = pynwb.misc.DynamicTable(name=f"normalizer_analysis_{i}", description="quality control (EVPP 0.9) analysis from one normalizer recording")
+                qc_table = pynwb.misc.DynamicTable(
+                    name=f"normalizer_analysis_{i}",
+                    description="quality control (EVPP 0.9) analysis from one normalizer recording",
+                )
                 for column in qc_df.columns:
                     # new_table.add_column(name=column, description=column, data=stimuli_df[column].values)
                     qc_table.add_column(name=column, description="")
@@ -526,7 +562,6 @@ def aggregate_nwbfiles(
 
                 nwbfile.add_analysis(qc_table)
 
-                
         io.write(nwbfile)
 
     return aggregated_nwbfile_path

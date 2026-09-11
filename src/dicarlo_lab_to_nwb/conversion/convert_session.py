@@ -105,7 +105,7 @@ def convert_session_to_nwb(
             ecephys_interface.recording_extractor = stubed_recording
 
         conversion_options["Ecephys"] = dict(
-            iterator_opts={"display_progress": True, "buffer_gb": 5},
+            iterator_options={"display_progress": True, "buffer_gb": 5},
         )
     else:
         # This path adds the geometry of the probe as the electrodes table so the units can be linked
@@ -299,8 +299,8 @@ def calculate_quality_metrics_from_nwb(nwbfile: NWBFile, session_nwb_folder: Pat
     channel_names = df["channel_name"].values
 
     binned_spikes = nwbfile.processing["ecephys"]["BinnedAlignedSpikesToStimulus"]
-    psth_timebin_ms = binned_spikes.bin_width_in_milliseconds
-    psth_0 = binned_spikes.milliseconds_from_event_to_first_bin
+    psth_timebin_ms = binned_spikes.bin_width_in_ms
+    psth_0 = binned_spikes.event_to_bin_offset_in_ms
     psth_1 = psth_0 + psth_timebin_ms * n_timebins - psth_timebin_ms
     psth_timebins_s = np.linspace(psth_0, psth_1, n_timebins) / 1e3
     latencies_s = get_unit_latencies_from_reliabilities(psth, psth_timebins_s)

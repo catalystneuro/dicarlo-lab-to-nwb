@@ -361,8 +361,8 @@ def build_binned_aligned_spikes_from_nwbfile(
         event_timestamps=event_timestamps,
         condition_indices=condition_indices,
         condition_labels=condition_labels,
-        bin_width_in_milliseconds=bin_width_in_milliseconds,
-        milliseconds_from_event_to_first_bin=milliseconds_from_event_to_first_bin,
+        bin_width_in_ms=bin_width_in_milliseconds,
+        event_to_bin_offset_in_ms=milliseconds_from_event_to_first_bin,
         units_region=units_region,
     )
 
