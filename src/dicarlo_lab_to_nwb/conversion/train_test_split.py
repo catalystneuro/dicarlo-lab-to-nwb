@@ -32,6 +32,14 @@ def redact_test_stimuli(mworks_df: pd.DataFrame, train_test_split_df: pd.DataFra
     if missing_split_columns:
         raise ValueError(f"The train-test split is missing the columns {sorted(missing_split_columns)}.")
 
+    # A stimulus index shown with several files means the file names are not aligned with the presentations
+    filenames_per_stimulus = mworks_df.groupby("stimulus_presented")["stimulus_filename"].nunique()
+    if (filenames_per_stimulus > 1).any():
+        raise ValueError(
+            f"{int((filenames_per_stimulus > 1).sum())} stimulus indices appear with more than one "
+            "`stimulus_filename`, so the file names are not aligned with the presentations."
+        )
+
     is_train_by_filename = dict(zip(train_test_split_df["filename"], train_test_split_df["is_train"].astype(bool)))
     presented_filenames = mworks_df["stimulus_filename"]
     unmatched_filenames = sorted(set(presented_filenames) - set(is_train_by_filename))

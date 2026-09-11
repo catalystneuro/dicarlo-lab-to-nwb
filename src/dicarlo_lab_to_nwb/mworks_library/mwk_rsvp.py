@@ -54,6 +54,126 @@ def extract_image_from_sdu(data):
     return images.pop()
 
 
+def get_display_updates(event_file) -> pd.DataFrame:
+    """
+    Return one row per stimulus that reached the screen, from the `#stimDisplayUpdate` events.
+
+    An image is taken from every display update that contains it. A video spans many consecutive display
+    updates, so only the first one of each run is taken.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns `time` (MWorks time in microseconds), `stimulus_type`, `filename` and `file_hash`.
+    """
+    rows = []
+    in_video = False
+    for event in event_file.get_events_iter(codes=["#stimDisplayUpdate"]):
+        items = [item for item in event.data if isinstance(item, dict)]
+        video = next((item for item in items if item.get("type") == "video"), None)
+        if video is not None:
+            if not in_video:
+                # No hash for videos yet in MWorks 0.12
+                rows.append((event.time, "video", Path(video["filename"]).name, ""))
+            in_video = True
+            continue
+        in_video = False
+
+        image = next((item for item in items if item.get("type") in ("image", "audio")), None)
+        if image is not None:
+            if image["type"] == "audio":
+                print("Audio stimulus detected. Not supported yet")
+            rows.append((event.time, image["type"], Path(image["filename"]).name, image.get("file_hash", "")))
+
+    return pd.DataFrame(rows, columns=["time", "stimulus_type", "filename", "file_hash"])
+
+
+def match_display_updates_to_presentations(
+    presentation_times: np.ndarray, display_times: np.ndarray, max_lag_us: float = 100_000.0
+) -> np.ndarray:
+    """
+    Pair every display update with the `stimulus_presented` event nearest to it in time.
+
+    The display update usually follows its presentation event by a few milliseconds, but it is occasionally
+    logged just before it, so the nearest event is used instead of the preceding one.
+
+    Returns
+    -------
+    np.ndarray
+        For each display update, the index of its presentation event.
+    """
+    order = np.searchsorted(presentation_times, display_times)
+    previous = np.clip(order - 1, 0, len(presentation_times) - 1)
+    following = np.clip(order, 0, len(presentation_times) - 1)
+    following_is_nearer = np.abs(presentation_times[following] - display_times) < np.abs(
+        presentation_times[previous] - display_times
+    )
+    nearest = np.where(following_is_nearer, following, previous)
+
+    lags_us = np.abs(presentation_times[nearest] - display_times)
+    if (lags_us > max_lag_us).any():
+        raise ValueError(
+            f"{int((lags_us > max_lag_us).sum())} display updates have no stimulus_presented event within "
+            f"{max_lag_us / 1000:.0f} ms."
+        )
+    if len(np.unique(nearest)) != len(nearest):
+        raise ValueError("Two display updates were paired with the same stimulus_presented event.")
+
+    return nearest
+
+
+def pair_pulses_with_display_updates(
+    display_times_us: np.ndarray, pulse_frames: np.ndarray, sampling_frequency: float, tolerance_ms: float = 50.0
+) -> np.ndarray:
+    """
+    Pair every sample-on pulse (Intan clock) with the display update it belongs to (MWorks clock).
+
+    The offset between the two clocks is taken from the differences between the first pulses and the display
+    updates: the candidate under which most of the first pulses land on a display update wins. Picking the
+    most common difference alone is not enough, because stimuli within a trial are evenly spaced and an
+    offset shifted by one stimulus also lines up most of them. Each pulse is then paired with the display
+    update nearest to its predicted MWorks time, and the prediction is refit with a line through the paired
+    times to absorb the drift between the clocks (a few parts per million, tens of milliseconds over a
+    session). A pulse with no display update within
+    `tolerance_ms` (a stimulus that was announced but never drawn) is left unpaired, and so is a display update
+    with no pulse (outside the Intan recording).
+
+    Returns
+    -------
+    np.ndarray
+        For each pulse, the index of its display update, or -1 when it has none.
+    """
+    display_times_s = np.asarray(display_times_us, dtype=float) / 1e6
+    pulse_times_s = np.asarray(pulse_frames, dtype=float) / sampling_frequency
+    tolerance_s = tolerance_ms / 1000.0
+
+    def pair_nearest(predicted_s: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        order = np.clip(np.searchsorted(display_times_s, predicted_s), 1, len(display_times_s) - 1)
+        previous_is_nearer = np.abs(display_times_s[order - 1] - predicted_s) < np.abs(
+            display_times_s[order] - predicted_s
+        )
+        nearest = np.where(previous_is_nearer, order - 1, order)
+        return nearest, np.abs(display_times_s[nearest] - predicted_s) <= tolerance_s
+
+    first_pulses_s = pulse_times_s[:200]
+    differences_s = (display_times_s[np.newaxis, :] - first_pulses_s[:, np.newaxis]).ravel()
+    binned_differences, counts = np.unique(np.round(differences_s / 0.01), return_counts=True)
+    candidate_offsets_s = binned_differences[np.argsort(counts)[::-1][:20]] * 0.01
+    clock_offset_s = max(candidate_offsets_s, key=lambda offset_s: pair_nearest(first_pulses_s + offset_s)[1].sum())
+
+    slope, intercept = 1.0, clock_offset_s
+    for _ in range(2):
+        nearest, is_paired = pair_nearest(slope * pulse_times_s + intercept)
+        slope, intercept = np.polyfit(pulse_times_s[is_paired], display_times_s[nearest[is_paired]], 1)
+
+    pulse_to_display = np.where(is_paired, nearest, -1)
+    paired_displays = pulse_to_display[pulse_to_display >= 0]
+    if len(np.unique(paired_displays)) != len(paired_displays):
+        raise ValueError("Two sample-on pulses were paired with the same display update.")
+
+    return pulse_to_display
+
+
 def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_event_filepath, output_dir: str = "./"):
     print(f"Sampling rate: {SAMPLING_FREQUENCY_HZ}, {filename}")
 
@@ -158,10 +278,28 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     correct_fixation_df["stimulus_order_in_trial"] = stimulus_presented_df["stimulus_order_in_trial"]
 
     ###########################################################################
+    # Pair the presentations with the stimuli that reached the screen
+    ###########################################################################
+    # Presentation events that were never displayed (e.g. logged before the task started) are dropped. Pairing by
+    # time instead of by position keeps the stimulus index, the file name and the times of each row together
+    display_updates_df = get_display_updates(event_file)
+    displayed_indices = match_display_updates_to_presentations(
+        presentation_times=stimulus_presented_df.time.to_numpy(), display_times=display_updates_df.time.to_numpy()
+    )
+    never_displayed = np.setdiff1d(np.arange(len(stimulus_presented_df)), displayed_indices)
+    if len(never_displayed) > 0:
+        print(f"Dropping {len(never_displayed)} stimulus_presented events that were never displayed: {never_displayed}")
+    stimulus_presented_df = stimulus_presented_df.iloc[displayed_indices].reset_index(drop=True)
+    correct_fixation_df = correct_fixation_df.iloc[displayed_indices].reset_index(drop=True)
+    stimulus_presented_df["stimulus_type"] = display_updates_df["stimulus_type"].to_numpy()
+    stimulus_presented_df["filename"] = display_updates_df["filename"].to_numpy()
+    stimulus_presented_df["image_hash"] = display_updates_df["file_hash"].to_numpy()
+
+    ###########################################################################
     # Read sample on file
     ###########################################################################
     fid = open(digi_event_filepath, "r")
-    filesize = os.path.getsize(filename)  # in bytes
+    filesize = os.path.getsize(digi_event_filepath)  # in bytes
     num_samples = filesize // 2  # uint16 = 2 bytes
     digital_in = np.fromfile(fid, "uint16", num_samples)
     fid.close()
@@ -169,13 +307,23 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     (samp_on,) = np.nonzero(digital_in[:-1] < digital_in[1:])  # Look for 0->1 transitions
     samp_on = samp_on + 1  # Previous line returns indexes of 0s seen before spikes, but we want indexes of first spikes
 
-    if len(stimulus_presented_df) > len(samp_on):
-        print(f"Warning: Trimming MWorks files as ({len(stimulus_presented_df)} > {len(samp_on)})")
-        stimulus_presented_df = stimulus_presented_df[: len(samp_on)]
-        correct_fixation_df = correct_fixation_df[: len(samp_on)]
-
-    if len(correct_fixation_df) < len(samp_on):
-        samp_on = samp_on[: len(correct_fixation_df)]
+    # Pair each sample-on pulse with its displayed stimulus by time. Pulses of stimuli that were never drawn and
+    # displayed stimuli outside the Intan recording are dropped
+    pulse_to_display = pair_pulses_with_display_updates(
+        display_times_us=display_updates_df.time.to_numpy(),
+        pulse_frames=samp_on,
+        sampling_frequency=SAMPLING_FREQUENCY_HZ,
+    )
+    if (pulse_to_display < 0).any():
+        print(f"Warning: dropping {int((pulse_to_display < 0).sum())} sample-on pulses with no displayed stimulus")
+    samp_on = samp_on[pulse_to_display >= 0]
+    displays_with_pulse = pulse_to_display[pulse_to_display >= 0]
+    if len(displays_with_pulse) < len(stimulus_presented_df):
+        print(
+            f"Warning: keeping the {len(displays_with_pulse)} of {len(stimulus_presented_df)} displayed stimuli that have a pulse"
+        )
+    stimulus_presented_df = stimulus_presented_df.iloc[displays_with_pulse].reset_index(drop=True)
+    correct_fixation_df = correct_fixation_df.iloc[displays_with_pulse].reset_index(drop=True)
 
     assert len(samp_on) == len(stimulus_presented_df)
 
@@ -223,134 +371,6 @@ def dump_events_rsvp(SAMPLING_FREQUENCY_HZ, filename, photodiode_filepath, digi_
     for i, x in enumerate(photodiode_on - samp_on):
         if x / 1000.0 > 40:
             print(f"Warning: Sample {i} has delay of {x / 1000.} ms")
-
-    ###########################################################################
-    # Extract image file hash from #stimDisplayUpdate events
-    ###########################################################################
-    stimulus_type_list = []
-    filepath_list = []
-    file_hash_list = []
-
-    # track video events separately in case there are video stimuli
-    video_sdu_times = []
-    sdu_times = []
-    in_video = False
-    video_info = None  # Store current video info
-
-    for e_i in event_file.get_events_iter(codes=["#stimDisplayUpdate"]):
-        has_video = any(data_i.get("type") == "video" for data_i in e_i.data)
-
-        if has_video:
-            if not in_video:
-                # New video starting
-                video_sdu_times.append(e_i.time)
-                in_video = True
-                # Store video info
-                for d_i in e_i.data:
-                    if d_i.get("type") == "video":
-                        video_info = {
-                            "type": "video",
-                            "filename": Path(d_i["filename"]).name,
-                            "file_hash": "",  # No hash for videos yet for MWorks 0.12
-                        }
-                        # Add video info only once at start
-                        stimulus_type_list.append(video_info["type"])
-                        filepath_list.append(video_info["filename"])
-                        file_hash_list.append(video_info["file_hash"])
-                        break
-            # Skip adding info for subsequent video frames
-            continue
-
-        else:  # non-video stimuli
-            # Reset video state
-            in_video = False
-            video_info = None
-
-        # Handle non-video stimuli
-        for d_i in e_i.data:
-            sdu_times.append(e_i.time)
-            if d_i.get("type") == "image":
-                stimulus_type_list.append("image")
-                filepath_list.append(Path(d_i["filename"]).name)
-                file_hash_list.append(d_i["file_hash"])
-                break
-            elif d_i.get("type") == "audio":
-                stimulus_type_list.append("audio")
-                filepath_list.append(Path(d_i["filename"]).name)
-                file_hash_list.append("")
-                print("Audio stimulus detected. Not supported yet")
-                break
-
-    # (YB) 02/26/2025: patch for VIDEO only experiments.
-    # Detected cases where there are more stimulus presentations than #stimDisplayUpdate events with videos.
-    # Video SDU events typically occur after the stimulus presentation with a delay ranging from 9ms to 30ms, but this is not always the case.
-    if "video" in stimulus_type_list:
-        # Get timestamps from stimulus_presented_df
-        stim_times = stimulus_presented_df["time"].values
-        stimulus_presented_df_skip_idx = []
-
-        # Align timestamps and adjust lists accordingly
-        aligned_type_list = []
-        aligned_filepath_list = []
-        aligned_hash_list = []
-        aligned_stim_times = []  # for debugging
-        aligned_sdu_times = []  # for debugging
-        aligned_samp_on_us = []
-        aligned_photodiode_on_us = []
-        stim_idx = 0
-        sdu_idx = 0
-
-        while stim_idx < len(stim_times) and sdu_idx < len(video_sdu_times):
-            time_diff = video_sdu_times[sdu_idx] - stim_times[stim_idx]
-
-            if time_diff > 0:
-                # If video SDU time is later than its own stimulus time, skip this stimulus time
-                print(
-                    f"Skipping trial time {stim_times[stim_idx]} with no video (diff w/ next video: {time_diff/1000:.2f}ms)"
-                )
-                # adjust stimulus_presented_df to match the aligned length
-                stimulus_presented_df_skip_idx.append(stim_idx)
-                stim_idx += 1
-            else:
-                # Add the SDU info and advance both indices
-                aligned_type_list.append(stimulus_type_list[sdu_idx])
-                aligned_filepath_list.append(filepath_list[sdu_idx])
-                aligned_hash_list.append(file_hash_list[sdu_idx])
-                aligned_stim_times.append(stim_times[stim_idx])
-                aligned_sdu_times.append(sdu_times[sdu_idx])
-
-                aligned_samp_on_us.append(samp_on[stim_idx])
-                aligned_photodiode_on_us.append(photodiode_on[stim_idx])
-
-                stim_idx += 1
-                sdu_idx += 1
-
-        # Update the lists with aligned versions
-        stimulus_type_list = aligned_type_list
-        filepath_list = aligned_filepath_list
-        file_hash_list = aligned_hash_list
-        samp_on = aligned_samp_on_us
-        photodiode_on = aligned_photodiode_on_us
-        # Trim stimulus_presented_df to match the aligned length
-        stimulus_presented_df = stimulus_presented_df[
-            ~stimulus_presented_df.index.isin(stimulus_presented_df_skip_idx)
-        ].reset_index(drop=True)
-        correct_fixation_df = correct_fixation_df[
-            ~correct_fixation_df.index.isin(stimulus_presented_df_skip_idx)
-        ].reset_index(drop=True)
-        # stimulus_presented_df = stimulus_presented_df.iloc[:len(stimulus_type_list)].reset_index(drop=True)
-        # correct_fixation_df = correct_fixation_df.iloc[:len(stimulus_type_list)].reset_index(drop=True)
-
-        # Verify lengths match
-        assert len(stimulus_type_list) == len(
-            stimulus_presented_df
-        ), f"Stimulus type list length ({len(stimulus_type_list)}) doesn't match presented stimuli ({len(stimulus_presented_df)})"
-
-        print(f"\nFinal alignment: {len(stimulus_type_list)} stimuli")
-
-    stimulus_presented_df["stimulus_type"] = stimulus_type_list
-    stimulus_presented_df["filename"] = filepath_list
-    stimulus_presented_df["image_hash"] = file_hash_list
 
     ###########################################################################
     # Get eye data
