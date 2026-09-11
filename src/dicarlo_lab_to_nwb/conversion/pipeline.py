@@ -3,15 +3,11 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from neuroconv.tools.spikeinterface import add_sorting_to_nwbfile
+import pandas as pd
 from pynwb import NWBHDF5IO
+from pynwb.misc import Units
 from scipy.signal import ellip, filtfilt
-from spikeinterface.core import (
-    BaseRecording,
-    BaseSorting,
-    ChunkRecordingExecutor,
-    NumpySorting,
-)
+from spikeinterface.core import BaseRecording, ChunkRecordingExecutor
 from spikeinterface.extractors import IntanRecordingExtractor, NwbRecordingExtractor
 from spikeinterface.preprocessing import ScaleRecording
 from spikeinterface.preprocessing.basepreprocessor import (
@@ -407,7 +403,7 @@ def calculate_thresholding_events(
     stub_test: bool = False,
     verbose: bool = False,
     probe_info_path: Optional[Path | str] = None,
-) -> BaseSorting:
+) -> pd.DataFrame:
     """
     Extracts spike events from neural recordings using a thresholding pipeline and returns the sorted spike times.
     Supports both Intan (.rhd) and NWB file formats.
@@ -440,8 +436,8 @@ def calculate_thresholding_events(
 
     Returns
     -------
-    BaseSorting
-        An object containing the sorted spike times and related metadata
+    pd.DataFrame
+        One row per channel, with its `channel_name`, `probe`, `unit_location_um` and `spike_times` in seconds
 
     Notes
     -----
@@ -500,8 +496,8 @@ def calculate_thresholding_events(
 
         dict_of_spikes_times_per_channel[probe_name] = spikes_times_per_channel
 
-    # Build a single sorting keyed by channel ID. Aggregating per-probe sortings and renaming the units
-    # makes spikeinterface cache a full copy of the spike vector at each wrapper layer
+    # One row per channel, which is what the units table needs. Going through a spikeinterface sorting object
+    # instead makes it keep several copies of every spike in memory until the units are written
     channel_ids = processed_recording.get_channel_ids()
     channel_locations = processed_recording.get_channel_locations()
     channel_probe_names = processed_recording.get_property("probe")
@@ -510,28 +506,31 @@ def calculate_thresholding_events(
     for probe_spikes_times_per_channel in dict_of_spikes_times_per_channel.values():
         spikes_times_per_channel.update(probe_spikes_times_per_channel)
 
-    spike_frames_per_channel = {
-        channel_id: (spikes_times_per_channel[channel_id] * sampling_frequency).round().astype("uint")
-        for channel_id in channel_ids
-    }
-    sorting = NumpySorting.from_unit_dict(spike_frames_per_channel, sampling_frequency=sampling_frequency)
-    sorting.set_property(key="probe", values=np.asarray(channel_probe_names, dtype=object))
-    sorting.set_property(key="unit_location_um", values=channel_locations)
+    units_dataframe = pd.DataFrame(
+        {
+            "channel_name": channel_ids,
+            "probe": channel_probe_names,
+            "unit_location_um": list(channel_locations),
+            "spike_times": [spikes_times_per_channel[channel_id] for channel_id in channel_ids],
+        }
+    )
+    # The detection returns times on the sample grid, so this is the smallest difference between two spikes
+    units_dataframe.attrs["sampling_frequency"] = sampling_frequency
 
     if verbose:
-        print("Building sorting object")
-        print(sorting)
+        number_of_spikes = sum(len(spike_times) for spike_times in units_dataframe["spike_times"])
+        print(f"Detected {number_of_spikes} spikes in {len(units_dataframe)} channels")
 
     # Clean up
     del recording
     if "processed_recording" in locals():
         del processed_recording
 
-    return sorting
+    return units_dataframe
 
 
 def write_thresholding_events_to_nwb(
-    sorting: BaseSorting,
+    units_dataframe: pd.DataFrame,
     nwbfile_path: str | Path,
     thresholindg_pipeline_kwargs: dict,
     append: bool = True,
@@ -550,20 +549,47 @@ def write_thresholding_events_to_nwb(
 
         # We map the units to electrodes based on the unit name
         # For the Utah Array probe there is only site per channel
-        unit_names = sorting.get_unit_ids()
         channel_names = nwbfile.electrodes["channel_name"].data[:].tolist()
+        unit_electrode_indices = [[channel_names.index(unit_name)] for unit_name in units_dataframe["channel_name"]]
 
-        unit_electrode_indices = []
-        for unit_name in unit_names:
-            index = channel_names.index(unit_name)
-            unit_electrode_indices.append([index])
-
-        add_sorting_to_nwbfile(
-            nwbfile=nwbfile,
-            sorting=sorting,
-            units_description=units_description,
-            unit_electrode_indices=unit_electrode_indices,
+        # The table is written column by column, which keeps the spike times in one array instead of the
+        # several copies per spike that a spikeinterface sorting object holds
+        units_table = Units(
+            name="units",
+            description=units_description,
+            resolution=1.0 / units_dataframe.attrs["sampling_frequency"],
         )
+        units_table.id.extend(list(range(len(units_dataframe))))
+        units_table.add_column(
+            name="spike_times",
+            description="the spike times for each unit in seconds",
+            data=units_dataframe["spike_times"].tolist(),
+            index=True,
+        )
+        units_table.add_column(
+            name="electrodes",
+            description="the electrodes that each spike unit came from",
+            data=unit_electrode_indices,
+            index=True,
+            table=nwbfile.electrodes,
+        )
+        units_table.add_column(
+            name="unit_name",
+            description="Unique reference for each unit.",
+            data=units_dataframe["channel_name"].tolist(),
+        )
+        units_table.add_column(
+            name="unit_location_um",
+            description="Location of the electrode of the unit in micrometers.",
+            data=units_dataframe["unit_location_um"].tolist(),
+            index=True,
+        )
+        units_table.add_column(
+            name="probe",
+            description="Probe the unit was recorded from.",
+            data=units_dataframe["probe"].tolist(),
+        )
+        nwbfile.units = units_table
 
         if append:
             io.write(nwbfile)

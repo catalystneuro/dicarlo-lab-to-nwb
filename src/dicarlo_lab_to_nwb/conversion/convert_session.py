@@ -208,7 +208,7 @@ def convert_session_to_nwb(
         else:
             file_path = intan_file_path
 
-        sorting = calculate_thresholding_events(
+        units_dataframe = calculate_thresholding_events(
             file_path=file_path,
             f_notch=f_notch,
             bandwidth=bandwidth,
@@ -222,13 +222,13 @@ def convert_session_to_nwb(
         )
 
         nwbfile_path = write_thresholding_events_to_nwb(
-            sorting=sorting,
+            units_dataframe=units_dataframe,
             nwbfile_path=nwbfile_path,
             verbose=verbose,
             thresholindg_pipeline_kwargs=thresholindg_pipeline_kwargs,
         )
 
-        del sorting
+        del units_dataframe
 
         if verbose:
             stop_time = time.time()
