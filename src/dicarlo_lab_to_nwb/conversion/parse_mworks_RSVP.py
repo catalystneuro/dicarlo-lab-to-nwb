@@ -25,13 +25,13 @@ def parse_mworks_file(mworks_folder: str | Path, raw_data_folder: str | Path, ou
         stream_name="RHD2000 amplifier channel",
     )
     sampling_freq = recording.get_sampling_frequency()
-    photodiode_file = raw_data_folder / "board-ANALOG-IN-1.dat"
+    photodiode_file = raw_data_folder / "board-ANALOG-IN-1.dat"  # only mwk_bars still reads the file itself
     digi_event_file = raw_data_folder / "board-DIGITAL-IN-02.dat"
 
     # run parser
     if "normalizer" in mworks_filepath.name:
         output_filepath = mwk_rsvp.dump_events_rsvp(
-            sampling_freq, mworks_filepath, photodiode_file, digi_event_file, output_folder
+            sampling_freq, mworks_filepath, intan_file_path, digi_event_file, output_folder
         )
     elif "bar_mapping" in mworks_filepath.name:
         print(f"parsing bar mapping from: {mworks_filepath.name}")
@@ -40,7 +40,7 @@ def parse_mworks_file(mworks_folder: str | Path, raw_data_folder: str | Path, ou
         )
     else:
         output_filepath = mwk_rsvp.dump_events_rsvp(
-            sampling_freq, mworks_filepath, photodiode_file, digi_event_file, output_folder
+            sampling_freq, mworks_filepath, intan_file_path, digi_event_file, output_folder
         )
 
     time_stop = time.time()
