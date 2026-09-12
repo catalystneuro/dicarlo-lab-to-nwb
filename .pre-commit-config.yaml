@@ -9,9 +9,9 @@ repos:
     rev: 24.4.2
     hooks:
     -   id: black
-        exclude: ^docs/
+        exclude: ^docs/|^src/dicarlo_lab_to_nwb/conversion/intananalogueventsinterface.py$
 -   repo: https://github.com/PyCQA/isort
     rev: 5.13.2
     hooks:
     -   id: isort
-        exclude: ^docs/
+        exclude: ^docs/|^src/dicarlo_lab_to_nwb/conversion/intananalogueventsinterface.py$
