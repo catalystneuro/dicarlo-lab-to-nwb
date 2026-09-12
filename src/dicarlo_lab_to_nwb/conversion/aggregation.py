@@ -6,10 +6,163 @@ import ndx_binned_spikes
 import numpy as np
 import pandas as pd
 import pynwb
+from hdmf.data_utils import AbstractDataChunkIterator, DataChunk
 from pynwb import NWBHDF5IO, NWBFile
+from pynwb.core import ScratchData
 from tqdm.auto import tqdm
 
 from dicarlo_lab_to_nwb.conversion.probe import UtahArrayProbeInterface
+
+
+class SessionPSTHBlocks(AbstractDataChunkIterator):
+    """
+    One session's PSTH, copied into the aggregated file one block at a time.
+
+    Reading it whole with `data[:]` holds it in memory until the aggregated file is written, which is 3 GiB
+    for a session of the videos project and was the largest allocation of the aggregation.
+
+    Parameters
+    ----------
+    session_psth_dataset
+        The session's PSTH dataset, shaped (units, stimuli, repetitions, bins).
+    bytes_per_block : int
+        Rough size of each block read and written.
+    """
+
+    def __init__(self, session_psth_dataset, bytes_per_block: int = 256 * 2**20):
+        self._dataset = session_psth_dataset
+        self._shape = tuple(session_psth_dataset.shape)
+        self._dtype = np.dtype(session_psth_dataset.dtype)
+
+        number_of_units, number_of_stimuli, repetitions, number_of_bins = self._shape
+        bytes_per_stimulus = number_of_units * repetitions * number_of_bins * self._dtype.itemsize
+        self._stimuli_per_block = max(1, min(number_of_stimuli, bytes_per_block // max(1, bytes_per_stimulus)))
+        self._starts = list(range(0, number_of_stimuli, self._stimuli_per_block))
+        self._block_index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> DataChunk:
+        if self._block_index >= len(self._starts):
+            raise StopIteration
+        start = self._starts[self._block_index]
+        stop = min(start + self._stimuli_per_block, self._shape[1])
+        self._block_index += 1
+        return DataChunk(
+            data=self._dataset[:, start:stop, :, :],
+            selection=(slice(None), slice(start, stop), slice(None), slice(None)),
+        )
+
+    def recommended_chunk_shape(self) -> None:
+        return None
+
+    def recommended_data_shape(self) -> tuple:
+        return self._shape
+
+    @property
+    def dtype(self) -> np.dtype:
+        return self._dtype
+
+    @property
+    def maxshape(self) -> tuple:
+        return self._shape
+
+
+class ConcatenatedSessionPSTH(AbstractDataChunkIterator):
+    """
+    The session PSTHs joined along the repetition axis, written one block at a time.
+
+    Each session's PSTH is read from the aggregated file only as its block is written, so the joined array is
+    never held in memory. Reading them all and calling `np.concatenate` peaked at 6.17 GB for a single day,
+    where one session's PSTH is already 3 GiB, and it grows with every session added to a project.
+
+    Parameters
+    ----------
+    session_psth_datasets : list
+        The per-session PSTH datasets, shaped (units, stimuli, repetitions, bins). They must agree on every
+        axis except the repetitions, which is the one they are joined on.
+    unit_indices : np.ndarray, optional
+        The units to keep, as indices. All of them when this is None.
+    bytes_per_block : int
+        Rough size of each block read and written.
+    """
+
+    def __init__(
+        self,
+        session_psth_datasets: List,
+        unit_indices: Optional[np.ndarray] = None,
+        bytes_per_block: int = 256 * 2**20,
+    ):
+        number_of_units, number_of_stimuli, _, number_of_bins = session_psth_datasets[0].shape
+        for dataset in session_psth_datasets[1:]:
+            if (
+                dataset.shape[0] != number_of_units
+                or dataset.shape[1] != number_of_stimuli
+                or dataset.shape[3] != number_of_bins
+            ):
+                raise ValueError(
+                    "The session PSTHs must agree on units, stimuli and bins to be joined on the repetition "
+                    f"axis, and these do not: {[dataset.shape for dataset in session_psth_datasets]}."
+                )
+
+        self._datasets = session_psth_datasets
+        self._unit_selection = slice(None) if unit_indices is None else list(unit_indices)
+        self._number_of_units = number_of_units if unit_indices is None else len(unit_indices)
+        self._number_of_stimuli = number_of_stimuli
+        self._number_of_bins = number_of_bins
+        self._dtype = np.dtype(session_psth_datasets[0].dtype)
+
+        repetitions_per_session = [dataset.shape[2] for dataset in session_psth_datasets]
+        self._repetition_offsets = np.cumsum([0] + repetitions_per_session)
+
+        bytes_per_stimulus = (
+            self._number_of_units * max(repetitions_per_session) * number_of_bins * self._dtype.itemsize
+        )
+        stimuli_per_block = max(1, min(number_of_stimuli, bytes_per_block // max(1, bytes_per_stimulus)))
+        self._blocks = [
+            (session_index, start, min(start + stimuli_per_block, number_of_stimuli))
+            for session_index in range(len(session_psth_datasets))
+            for start in range(0, number_of_stimuli, stimuli_per_block)
+        ]
+        self._block_index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> DataChunk:
+        if self._block_index >= len(self._blocks):
+            raise StopIteration
+        session_index, start, stop = self._blocks[self._block_index]
+        self._block_index += 1
+
+        block = self._datasets[session_index][self._unit_selection, start:stop, :, :]
+        selection = (
+            slice(None),
+            slice(start, stop),
+            slice(int(self._repetition_offsets[session_index]), int(self._repetition_offsets[session_index + 1])),
+            slice(None),
+        )
+        return DataChunk(data=block, selection=selection)
+
+    def recommended_chunk_shape(self) -> None:
+        return None
+
+    def recommended_data_shape(self) -> tuple:
+        return self.maxshape
+
+    @property
+    def dtype(self) -> np.dtype:
+        return self._dtype
+
+    @property
+    def maxshape(self) -> tuple:
+        return (
+            self._number_of_units,
+            self._number_of_stimuli,
+            int(self._repetition_offsets[-1]),
+            self._number_of_bins,
+        )
 
 
 def load_nwb_file(file_path: Union[str, Path]) -> NWBFile:
@@ -263,7 +416,14 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
             else:
                 name = f"psth_session_data_{session_start_time}"
 
-            dest_nwb.add_scratch(file_psth.data[:], name=name, description=file_psth.description)
+            # Streamed from the source file rather than read whole: one session's PSTH is 3 GiB
+            dest_nwb.add_scratch(
+                ScratchData(
+                    name=name,
+                    data=SessionPSTHBlocks(session_psth_dataset=file_psth.data),
+                    description=file_psth.description,
+                )
+            )
 
             # Add PSTH time bins
             psth_bin_width_s = (1 / 1000.0) * source_nwb.processing["ecephys"][
@@ -496,20 +656,18 @@ def aggregate_nwbfiles(
         pipeline_version_list=pipeline_version_list,
     )
 
-    # Final pass: Read all session PSTHs and add concatenated data
+    # Final pass: concatenate the session PSTHs, reading them back one block at a time
     if verbose:
         tqdm.write("Concatenating session PSTHs...")
     with NWBHDF5IO(aggregated_nwbfile_path, mode="a") as io:
         nwbfile = io.read()
 
-        # Collect all session PSTHs
-        session_psths = []
-        for key in nwbfile.scratch.keys():
-            if key.startswith("psth_session_data_") and not key.endswith("concatenated"):
-                session_psths.append(nwbfile.scratch[key].data[:])
-
-        # Create and add concatenated PSTH
-        concatenated_psth = np.concatenate(session_psths, axis=2)
+        # The datasets, not their contents: the iterator reads each block as it is written
+        session_psth_datasets = [
+            nwbfile.scratch[key].data
+            for key in sorted(nwbfile.scratch.keys())
+            if key.startswith("psth_session_data_") and not key.endswith("concatenated")
+        ]
 
         # Add merged PSTH time bins info from first session PSTH
         session_key = next(key for key in nwbfile.scratch.keys() if key.startswith("timebins_psth_session_data_"))
@@ -521,8 +679,9 @@ def aggregate_nwbfiles(
         )
 
         # Filter units using is_unit_valid array
+        unit_indices = None
         if is_unit_valid is not None:
-            number_of_units = concatenated_psth.shape[0]
+            number_of_units = session_psth_datasets[0].shape[0]
             if number_of_units != is_unit_valid.shape[0]:
                 raise ValueError(
                     f"Dimension mismatch in unit validation arrays:\n"
@@ -531,7 +690,7 @@ def aggregate_nwbfiles(
                     f"These dimensions must match for proper unit-wise validation.\n"
                     "Please ensure both arrays contain the same number of units."
                 )
-            concatenated_psth = concatenated_psth[is_unit_valid, ...]
+            unit_indices = np.nonzero(np.asarray(is_unit_valid))[0]
             nwbfile.add_scratch(
                 is_unit_valid.tolist(),
                 name="sites_psth_session_data_concatenated",
@@ -539,9 +698,11 @@ def aggregate_nwbfiles(
             )
 
         nwbfile.add_scratch(
-            concatenated_psth,
-            name="psth_session_data_concatenated",
-            description="Concatenated PSTH from multiple files",
+            ScratchData(
+                name="psth_session_data_concatenated",
+                data=ConcatenatedSessionPSTH(session_psth_datasets=session_psth_datasets, unit_indices=unit_indices),
+                description="Concatenated PSTH from multiple files",
+            )
         )
 
         # add QC dataframes (add_analysis)
