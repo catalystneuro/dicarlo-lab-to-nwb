@@ -6,12 +6,48 @@ import ndx_binned_spikes
 import numpy as np
 import pandas as pd
 import pynwb
+from hdmf.backends.hdf5.h5_utils import H5DataIO
 from hdmf.data_utils import AbstractDataChunkIterator, DataChunk
 from pynwb import NWBHDF5IO, NWBFile
 from pynwb.core import ScratchData
 from tqdm.auto import tqdm
 
 from dicarlo_lab_to_nwb.conversion.probe import UtahArrayProbeInterface
+
+
+def choose_psth_chunk_shape(shape: tuple, target_bytes: int = 4 * 2**20, itemsize: int = 8) -> tuple:
+    """
+    Pick the HDF5 chunk shape for a PSTH of `shape` (units, stimuli, repetitions, bins).
+
+    Repetitions and bins are small, so a chunk holds them whole and spans a block of units and stimuli. The
+    stimulus block is chosen to divide the axis almost evenly: HDF5 stores the ragged last chunk of every row
+    in full, and the default that hdmf derives from the write blocks wasted 20 percent of the file that way
+    (a block of 630 over an axis of 2521 leaves a chunk holding one column).
+
+    Returns
+    -------
+    tuple
+        The chunk shape.
+    """
+    number_of_units, number_of_stimuli, repetitions, number_of_bins = shape
+    bytes_per_unit_stimulus = repetitions * number_of_bins * itemsize
+
+    best_chunk, best_score = None, None
+    for unit_block in (1, 2, 4, 8, 16, 24, 32, 48):
+        if number_of_units % unit_block:
+            continue
+        for divisions in range(1, 41):
+            stimulus_block = int(np.ceil(number_of_stimuli / divisions))
+            chunk_bytes = unit_block * stimulus_block * bytes_per_unit_stimulus
+            if not (2**20 <= chunk_bytes <= 8 * 2**20):
+                continue
+            padding = (divisions * stimulus_block - number_of_stimuli) / (divisions * stimulus_block)
+            score = (padding, abs(chunk_bytes - target_bytes))
+            if best_score is None or score < best_score:
+                best_chunk, best_score = (unit_block, stimulus_block, repetitions, number_of_bins), score
+
+    # Nothing in range for a small PSTH: one chunk holds all of it
+    return best_chunk or shape
 
 
 class SessionPSTHBlocks(AbstractDataChunkIterator):
@@ -417,10 +453,16 @@ def propagate_session_data_to_aggregate_nwbfile(source_path: Path, destination_p
                 name = f"psth_session_data_{session_start_time}"
 
             # Streamed from the source file rather than read whole: one session's PSTH is 3 GiB
+            session_psth_blocks = SessionPSTHBlocks(session_psth_dataset=file_psth.data)
             dest_nwb.add_scratch(
                 ScratchData(
                     name=name,
-                    data=SessionPSTHBlocks(session_psth_dataset=file_psth.data),
+                    data=H5DataIO(
+                        data=session_psth_blocks,
+                        chunks=choose_psth_chunk_shape(session_psth_blocks.maxshape),
+                        compression="gzip",
+                        compression_opts=4,
+                    ),
                     description=file_psth.description,
                 )
             )
@@ -697,10 +739,18 @@ def aggregate_nwbfiles(
                 description="Boolean array indicating which sites are valid (visually-driven) from raw PSTH",
             )
 
+        concatenated_psth = ConcatenatedSessionPSTH(
+            session_psth_datasets=session_psth_datasets, unit_indices=unit_indices
+        )
         nwbfile.add_scratch(
             ScratchData(
                 name="psth_session_data_concatenated",
-                data=ConcatenatedSessionPSTH(session_psth_datasets=session_psth_datasets, unit_indices=unit_indices),
+                data=H5DataIO(
+                    data=concatenated_psth,
+                    chunks=choose_psth_chunk_shape(concatenated_psth.maxshape),
+                    compression="gzip",
+                    compression_opts=4,
+                ),
                 description="Concatenated PSTH from multiple files",
             )
         )
