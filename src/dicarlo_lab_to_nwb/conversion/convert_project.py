@@ -215,6 +215,7 @@ def convert_project_sessions(
                     nwbfile.add_scratch(table,
                                         name="quality_control_table",
                                         description="Quality control metrics from normalizer set",)
+                    io.write(nwbfile)
                     qc_dataframes.append(qm_df)
 
     stacked_metrics = pd.concat(
